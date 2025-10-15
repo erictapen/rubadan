@@ -1,4 +1,6 @@
-use log::info;
+use log::{info, warn};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
@@ -52,14 +54,47 @@ fn main() {
     });
 }
 
-pub struct App {}
+fn load_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+    let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "IBM Plex Sans".to_owned(),
+        FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Regular.otf")).into(),
+    );
+    fonts.font_data.insert(
+        "IBM Plex Sans Bold".to_owned(),
+        FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Bold.otf")).into(),
+    );
+    fonts
+        .families
+        .get_mut(&FontFamily::Proportional)
+        .unwrap()
+        .insert(0, "IBM Plex Sans".to_owned());
+    ctx.set_fonts(fonts);
+}
+
+pub struct App {
+    messages: Rc<RefCell<Vec<mt940::Message>>>,
+}
 
 impl App {
     /// Called once before the first frame.
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         info!("Initializing app");
-        Self {}
+        load_fonts(&cc.egui_ctx);
+        Self {
+            messages: Default::default(),
+        }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn execute<F: Future<Output = ()> + Send + 'static>(f: F) {
+    std::thread::spawn(move || futures::executor::block_on(f));
+}
+#[cfg(target_arch = "wasm32")]
+fn execute<F: Future<Output = ()> + 'static>(f: F) {
+    wasm_bindgen_futures::spawn_local(f);
 }
 
 impl eframe::App for App {
@@ -69,7 +104,35 @@ impl eframe::App for App {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::widgets::global_theme_preference_buttons(ui);
+            if self.messages.borrow().is_empty() {
+                if ui.button("Pick MT940 file").clicked() {
+                    let task = rfd::AsyncFileDialog::new().pick_file();
+                    let messages = self.messages.clone();
+                    execute(async move {
+                        let file = task.await;
+                        if let Some(file) = file {
+                            let file_content = file.read().await;
+                            info!("File loaded");
+                            let file_str = &String::from_utf8(file_content).unwrap();
+                            if file_str.contains(":61:220229") {
+                                warn!(
+                                    "Warning! Had to replace on occurence to an impossible date.",
+                                );
+                            }
+
+                            let parsed = mt940::parse_mt940(&mt940::sanitizers::sanitize(
+                                &file_str.replace(":61:220229", ":61:220301"),
+                            ))
+                            .unwrap_or_else(|e| panic!("{}", e));
+
+                            info!("Parsed {} MT940 messages", parsed.len());
+                            *messages.borrow_mut() = parsed;
+                        }
+                    });
+                }
+            } else {
+            }
+            ui.label(format!("{}", self.messages.borrow().len()));
         });
     }
 }
