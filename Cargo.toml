@@ -1,0 +1,21 @@
+[package]
+name = "implementation"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+egui = "*"
+eframe = { version = "*", features = [ "glow" ] }
+log = "*"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "*"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "*"
+web-sys = "*"
+
+[profile.release]
+opt-level = 2
+
