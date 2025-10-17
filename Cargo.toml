@@ -5,8 +5,9 @@ edition = "2024"
 
 
 [dependencies]
-egui = { version = "*", default-features = false }
-eframe = { version = "*", default-features = false, features = [ "glow" ] }
+egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe = { version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+epaint = { version = "*", git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 log = "*"
 # https://github.com/svenstaro/mt940-rs/pull/77
 mt940 = { git = "https://github.com/erictapen/mt940-rs", branch = "information-to-account-owner" }

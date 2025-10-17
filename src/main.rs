@@ -55,7 +55,8 @@ fn main() {
 }
 
 fn load_fonts(ctx: &egui::Context) {
-    use egui::{FontData, FontDefinitions, FontFamily};
+    use egui::{FontData, FontDefinitions};
+    use epaint::text::style::GenericFamily;
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         "IBM Plex Sans".to_owned(),
@@ -67,7 +68,7 @@ fn load_fonts(ctx: &egui::Context) {
     );
     fonts
         .families
-        .get_mut(&FontFamily::Proportional)
+        .get_mut(&GenericFamily::SansSerif)
         .unwrap()
         .insert(0, "IBM Plex Sans".to_owned());
     ctx.set_fonts(fonts);
