@@ -110,44 +110,40 @@ impl eframe::App for App {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            if self.messages.lock().unwrap().is_empty() {
-                if ui
+            if self.messages.lock().unwrap().is_empty()
+                && ui
                     .button(
                         RichText::new("Pick MT940 file")
                             .family(FontFamily::named("IBM Plex Sans ExtraLight")),
                     )
                     .clicked()
-                {
-                    let task = rfd::AsyncFileDialog::new().pick_file();
-                    let messages_clone = Arc::clone(&self.messages);
-                    let ctx_clone = ctx.clone();
-                    execute(async move {
-                        let file = task.await;
-                        if let Some(file) = file {
-                            let file_content = file.read().await;
-                            info!("File loaded");
-                            let file_str = &String::from_utf8(file_content).unwrap();
-                            if file_str.contains(":61:220229") {
-                                warn!(
-                                    "Warning! Had to replace on occurence to an impossible date.",
-                                );
-                            }
-
-                            let parsed = mt940::parse_mt940(&mt940::sanitizers::sanitize(
-                                &file_str.replace(":61:220229", ":61:220301"),
-                            ))
-                            .unwrap_or_else(|e| panic!("{}", e));
-
-                            info!("Parsed {} MT940 messages", parsed.len());
-                            let mut messages = messages_clone.lock().unwrap();
-                            *messages = parsed;
-                            // Redraw so the user can see the result of file load even when window
-                            // isn't active.
-                            ctx_clone.request_repaint();
+            {
+                let task = rfd::AsyncFileDialog::new().pick_file();
+                let messages_clone = Arc::clone(&self.messages);
+                let ctx_clone = ctx.clone();
+                execute(async move {
+                    let file = task.await;
+                    if let Some(file) = file {
+                        let file_content = file.read().await;
+                        info!("File loaded");
+                        let file_str = &String::from_utf8(file_content).unwrap();
+                        if file_str.contains(":61:220229") {
+                            warn!("Warning! Had to replace on occurence to an impossible date.",);
                         }
-                    });
-                }
-            } else {
+
+                        let parsed = mt940::parse_mt940(&mt940::sanitizers::sanitize(
+                            &file_str.replace(":61:220229", ":61:220301"),
+                        ))
+                        .unwrap_or_else(|e| panic!("{}", e));
+
+                        info!("Parsed {} MT940 messages", parsed.len());
+                        let mut messages = messages_clone.lock().unwrap();
+                        *messages = parsed;
+                        // Redraw so the user can see the result of file load even when window
+                        // isn't active.
+                        ctx_clone.request_repaint();
+                    }
+                });
             }
             ui.label(
                 RichText::new(format!("{}", self.messages.lock().unwrap().len()))
