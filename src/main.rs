@@ -2,6 +2,9 @@ use log::{info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use egui::RichText;
+use egui::text::style::FontFamily;
+
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     env_logger::init();
@@ -66,11 +69,15 @@ fn load_fonts(ctx: &egui::Context) {
         "IBM Plex Sans Bold".to_owned(),
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Bold.otf")).into(),
     );
-    fonts
-        .families
-        .get_mut(&GenericFamily::SansSerif)
-        .unwrap()
-        .insert(0, "IBM Plex Sans".to_owned());
+    fonts.font_data.insert(
+        "IBM Plex Sans Bold Italic".to_owned(),
+        FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-BoldItalic.otf")).into(),
+    );
+    fonts.font_data.insert(
+        "IBM Plex Sans ExtraLight".to_owned(),
+        FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-ExtraLight.otf")).into(),
+    );
+    // We don't register default font so that non-explicit font use is noticed.
     ctx.set_fonts(fonts);
 }
 
@@ -106,9 +113,16 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             if self.messages.borrow().is_empty() {
-                if ui.button("Pick MT940 file").clicked() {
+                if ui
+                    .button(
+                        RichText::new("Pick MT940 file")
+                            .family(FontFamily::named("IBM Plex Sans ExtraLight")),
+                    )
+                    .clicked()
+                {
                     let task = rfd::AsyncFileDialog::new().pick_file();
                     let messages = self.messages.clone();
+                    let ctx_clone = ctx.clone();
                     execute(async move {
                         let file = task.await;
                         if let Some(file) = file {
@@ -128,12 +142,23 @@ impl eframe::App for App {
 
                             info!("Parsed {} MT940 messages", parsed.len());
                             *messages.borrow_mut() = parsed;
+                            // Redraw so the user can see the result of file load even when window
+                            // isn't active.
+                            ctx_clone.request_repaint();
                         }
                     });
                 }
             } else {
             }
-            ui.label(format!("{}", self.messages.borrow().len()));
+            ui.label(
+                RichText::new(format!("{}", self.messages.borrow().len()))
+                    .family(FontFamily::named("IBM Plex Sans ExtraLight")),
+            );
+            ui.label(
+                RichText::new("Bold Text")
+                    .family(FontFamily::named("IBM Plex Sans ExtraLight"))
+                    .size(50.0),
+            );
         });
     }
 }
