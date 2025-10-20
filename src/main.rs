@@ -1,6 +1,5 @@
 use log::{info, warn};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use egui::RichText;
 use egui::text::style::FontFamily;
@@ -59,7 +58,6 @@ fn main() {
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
-    use epaint::text::style::GenericFamily;
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         "IBM Plex Sans".to_owned(),
@@ -82,7 +80,7 @@ fn load_fonts(ctx: &egui::Context) {
 }
 
 pub struct App {
-    messages: Rc<RefCell<Vec<mt940::Message>>>,
+    messages: Arc<Mutex<Vec<mt940::Message>>>,
 }
 
 impl App {
@@ -112,7 +110,7 @@ impl eframe::App for App {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            if self.messages.borrow().is_empty() {
+            if self.messages.lock().unwrap().is_empty() {
                 if ui
                     .button(
                         RichText::new("Pick MT940 file")
@@ -121,7 +119,7 @@ impl eframe::App for App {
                     .clicked()
                 {
                     let task = rfd::AsyncFileDialog::new().pick_file();
-                    let messages = self.messages.clone();
+                    let messages_clone = Arc::clone(&self.messages);
                     let ctx_clone = ctx.clone();
                     execute(async move {
                         let file = task.await;
@@ -141,7 +139,8 @@ impl eframe::App for App {
                             .unwrap_or_else(|e| panic!("{}", e));
 
                             info!("Parsed {} MT940 messages", parsed.len());
-                            *messages.borrow_mut() = parsed;
+                            let mut messages = messages_clone.lock().unwrap();
+                            *messages = parsed;
                             // Redraw so the user can see the result of file load even when window
                             // isn't active.
                             ctx_clone.request_repaint();
@@ -151,7 +150,7 @@ impl eframe::App for App {
             } else {
             }
             ui.label(
-                RichText::new(format!("{}", self.messages.borrow().len()))
+                RichText::new(format!("{}", self.messages.lock().unwrap().len()))
                     .family(FontFamily::named("IBM Plex Sans ExtraLight")),
             );
             ui.label(

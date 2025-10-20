@@ -5,9 +5,6 @@ edition = "2024"
 
 
 [dependencies]
-egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-eframe = { version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-epaint = { version = "*", git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 log = "*"
 # https://github.com/svenstaro/mt940-rs/pull/77
 mt940 = { git = "https://github.com/erictapen/mt940-rs", branch = "information-to-account-owner" }
@@ -17,10 +14,16 @@ futures = "*"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "*"
+egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe = { version = "*", default-features = false, features = [ "wayland", "glow", "x11" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+epaint = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "*"
 web-sys = "*"
+egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe = { version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+epaint = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 
 [profile.release]
 opt-level = 2
