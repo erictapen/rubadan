@@ -1,8 +1,10 @@
 use crate::execute;
-use egui::RichText;
 use egui::text::style::FontFamily;
+use egui::{Align, Label, Layout, RichText};
 use log::{info, warn};
 use std::sync::{Arc, Mutex};
+
+const THIN_SPACE: &str = "\u{2009}";
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -25,6 +27,14 @@ fn load_fonts(ctx: &egui::Context) {
     );
     // We don't register default font so that non-explicit font use is noticed.
     ctx.set_fonts(fonts);
+}
+
+fn regular(text: &str) -> RichText {
+    RichText::new(text).family(FontFamily::named("IBM Plex Sans"))
+}
+
+fn bold(text: &str) -> RichText {
+    RichText::new(text).family(FontFamily::named("IBM Plex Sans Bold"))
 }
 
 pub struct App {
@@ -93,6 +103,44 @@ impl eframe::App for App {
                     .family(FontFamily::named("IBM Plex Sans ExtraLight"))
                     .size(50.0),
             );
+
+            use egui_extras::{Column, TableBuilder};
+            TableBuilder::new(ui)
+                .auto_shrink([false, false])
+                .column(Column::auto())
+                .column(Column::auto())
+                .header(20.0, |mut header| {
+                    header.col(|ui| {
+                        ui.label(bold("date"));
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("amount"));
+                    });
+                })
+                .body(|mut body| {
+                    for message in &*self.messages.lock().unwrap() {
+                        for statement_line in &message.statement_lines {
+                            body.row(30.0, |mut row| {
+                                row.col(|ui| {
+                                    ui.add(
+                                        Label::new(regular(
+                                            format!("{}", statement_line.value_date).as_str(),
+                                        ))
+                                        .extend(),
+                                    );
+                                });
+                                row.col(|ui| {
+                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                        ui.label(regular(
+                                            format!("{}{THIN_SPACE}€", statement_line.amount)
+                                                .as_str(),
+                                        ));
+                                    });
+                                });
+                            });
+                        }
+                    }
+                });
         });
     }
 }
