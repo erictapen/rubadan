@@ -1751,6 +1751,7 @@ dependencies = [
  "log",
  "mt940",
  "rfd",
+ "rust_decimal",
  "wasm-bindgen-futures",
  "web-sys",
 ]
