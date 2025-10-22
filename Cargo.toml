@@ -13,6 +13,7 @@ rfd = "*"
 # https://github.com/svenstaro/mt940-rs/pull/77
 mt940 = { git = "https://github.com/erictapen/mt940-rs", branch = "information-to-account-owner" }
 rust_decimal = "*"
+iban = "*"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

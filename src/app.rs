@@ -122,6 +122,7 @@ impl eframe::App for App {
                 .auto_shrink([false, false])
                 .column(Column::auto())
                 .column(Column::auto())
+                .column(Column::auto())
                 .header(20.0, |mut header| {
                     header.col(|ui| {
                         ui.label(bold("date"));
@@ -131,11 +132,15 @@ impl eframe::App for App {
                             ui.label(bold("amount"));
                         });
                     });
+                    header.col(|ui| {
+                        ui.label(bold("IBAN"));
+                    });
                 })
                 .body(|mut body| {
                     for message in &*self.messages.lock().unwrap() {
                         for statement_line in &message.statement_lines {
                             body.row(0.0, |mut row| {
+                                // date
                                 row.col(|ui| {
                                     ui.add(
                                         Label::new(regular(
@@ -144,6 +149,7 @@ impl eframe::App for App {
                                         .extend(),
                                     );
                                 });
+                                // amount
                                 row.col(|ui| {
                                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                         amount(
@@ -152,6 +158,16 @@ impl eframe::App for App {
                                             &message.opening_balance.iso_currency_code,
                                         );
                                     });
+                                });
+                                // iban
+                                row.col(|ui| {
+                                    if let Some(mt940::InformationToAccountOwner::Structured {
+                                        applicant_iban: Some(iban_str),
+                                        ..
+                                    }) = &statement_line.information_to_account_owner
+                                    {
+                                        iban(ui, iban_str);
+                                    }
                                 });
                             });
                         }
@@ -172,4 +188,12 @@ fn amount(ui: &mut Ui, number: rust_decimal::Decimal, iso_currency_code: &str) {
     ui.label(regular(
         format!("{number}{THIN_SPACE}{currency_sign}").as_str(),
     ));
+}
+
+fn iban(ui: &mut Ui, iban: &str) {
+    if let Ok(iban) = iban.parse::<iban::Iban>() {
+        ui.add(Label::new(regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())).extend());
+    } else {
+        ui.add(Label::new(regular(format!("{iban}{THIN_SPACE}❌").as_str())).extend());
+    }
 }
