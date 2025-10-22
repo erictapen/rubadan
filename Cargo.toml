@@ -8,6 +8,8 @@ edition = "2024"
 egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 epaint = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
 egui_extras = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
 log = "*"
 rfd = "*"
 # https://github.com/svenstaro/mt940-rs/pull/77

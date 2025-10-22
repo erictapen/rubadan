@@ -2,6 +2,7 @@ use crate::execute;
 use egui::text::style::FontFamily;
 use egui::{Align, Label, Layout, RichText, Ui};
 use log::{error, info, warn};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 const THIN_SPACE: &str = "\u{2009}";
@@ -51,6 +52,7 @@ fn parse_mt940_file(bytes: &[u8]) -> Vec<mt940::Message> {
 
 pub struct App {
     messages: Arc<Mutex<Vec<mt940::Message>>>,
+    rules: Vec<Rule>,
 }
 
 impl App {
@@ -63,10 +65,19 @@ impl App {
         if cfg!(debug_assertions) {
             Self {
                 messages: Arc::new(Mutex::new(parse_mt940_file(include_bytes!("../mt940.sta")))),
+                //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
+                rules: vec![Rule {
+                    condition: Condition::Plain(Comparison::Contains(
+                        Field::Purpose,
+                        "cafe".to_string(),
+                    )),
+                    category: "expenses:4650bewirtungskosten".to_string(),
+                }],
             }
         } else {
             Self {
                 messages: Default::default(),
+                rules: Default::default(),
             }
         }
     }
@@ -107,15 +118,6 @@ impl eframe::App for App {
                     }
                 });
             }
-            ui.label(
-                RichText::new(format!("{}", self.messages.lock().unwrap().len()))
-                    .family(FontFamily::named("IBM Plex Sans ExtraLight")),
-            );
-            ui.label(
-                RichText::new("Bold Text")
-                    .family(FontFamily::named("IBM Plex Sans ExtraLight"))
-                    .size(50.0),
-            );
 
             use egui_extras::{Column, TableBuilder};
             TableBuilder::new(ui)
@@ -234,4 +236,31 @@ fn iban(ui: &mut Ui, iban: &str) {
     } else {
         ui.add(Label::new(regular(format!("{iban}{THIN_SPACE}❌").as_str())).extend());
     }
+}
+
+/// When purpose contains "Cafe" then it is "expenses:4650bewirtungskosten"
+#[derive(Serialize, Deserialize, Debug)]
+struct Rule {
+    condition: Condition,
+    category: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Condition {
+    Plain(Comparison),
+    And(Box<Condition>, Box<Condition>),
+    Or(Box<Condition>, Box<Condition>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Comparison {
+    Contains(Field, String),
+    Exact(Field, String),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Field {
+    Name,
+    Purpose,
+    Iban,
 }

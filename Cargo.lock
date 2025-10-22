@@ -1790,6 +1790,8 @@ dependencies = [
  "mt940",
  "rfd",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "wasm-bindgen-futures",
  "web-sys",
 ]
