@@ -50,9 +50,11 @@ fn parse_mt940_file(bytes: &[u8]) -> Vec<mt940::Message> {
     .unwrap_or_else(|e| panic!("{}", e))
 }
 
+#[derive(Default)]
 pub struct App {
     messages: Arc<Mutex<Vec<mt940::Message>>>,
     rules: Vec<Rule>,
+    hovered_rule: Option<usize>,
 }
 
 impl App {
@@ -68,33 +70,24 @@ impl App {
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
                 rules: vec![
                     Rule {
-                        condition: Condition::Plain(Comparison::Contains(
-                            Field::Purpose,
-                            "cafe".to_string(),
-                        )),
+                        condition: Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("cafe".to_string()),
+                        }),
                         category: "expenses:4650bewirtungskosten".to_string(),
                     },
                     Rule {
-                        condition: Condition::Plain(Comparison::Contains(
-                            Field::Purpose,
-                            "tee".to_string(),
-                        )),
-                        category: "expenses:4650bewirtungskosten".to_string(),
-                    },
-                    Rule {
-                        condition: Condition::Plain(Comparison::Contains(
-                            Field::Purpose,
-                            "cola".to_string(),
-                        )),
+                        condition: Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Anlage".to_string()),
+                        }),
                         category: "expenses:4650bewirtungskosten".to_string(),
                     },
                 ],
+                hovered_rule: Default::default(),
             }
         } else {
-            Self {
-                messages: Default::default(),
-                rules: Default::default(),
-            }
+            Default::default()
         }
     }
 }
@@ -167,7 +160,13 @@ impl eframe::App for App {
                     .body(|mut body| {
                         for message in &*self.messages.lock().unwrap() {
                             for statement_line in &message.statement_lines {
+                                let highlight_row = if let Some(rule_i) = self.hovered_rule {
+                                    self.rules[rule_i].condition.matches(statement_line)
+                                } else {
+                                    false
+                                };
                                 body.row(0.0, |mut row| {
+                                    row.set_selected(highlight_row);
                                     // date
                                     row.col(|ui| {
                                         ui.add(
@@ -241,6 +240,11 @@ impl eframe::App for App {
                             rule(ui, &r);
                         })
                         .response;
+                    if response.hovered() {
+                        self.hovered_rule = Some(i);
+                    } else if Some(i) == self.hovered_rule {
+                        self.hovered_rule = None;
+                    }
                     // Detect drops onto this item:
                     if let (Some(pointer), Some(hovered_payload)) = (
                         ui.input(|i| i.pointer.interact_pos()),
@@ -287,7 +291,10 @@ fn rule(ui: &mut Ui, rule: &Rule) {
 
 fn condition(ui: &mut Ui, condition: &Condition) {
     match condition {
-        Condition::Plain(Comparison::Contains(field, value)) => {
+        Condition::Plain(Comparison {
+            field,
+            ctype: ComparisonType::Contains(value),
+        }) => {
             ui.add(Label::new(regular(
                 format!("{field:?} contains \"{value}\"").as_str(),
             )));
@@ -342,10 +349,76 @@ enum Condition {
     Or(Box<Condition>, Box<Condition>),
 }
 
+impl Condition {
+    fn matches(&self, sl: &mt940::StatementLine) -> bool {
+        match self {
+            Self::Plain(comparison) => comparison.matches(sl),
+            Self::And(c1, c2) => c1.matches(sl) && c2.matches(sl),
+            Self::Or(c1, c2) => c1.matches(sl) || c2.matches(sl),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
-enum Comparison {
-    Contains(Field, String),
-    Exact(Field, String),
+struct Comparison {
+    field: Field,
+    ctype: ComparisonType,
+}
+
+impl Comparison {
+    fn matches(&self, sl: &mt940::StatementLine) -> bool {
+        match (&self.field, sl) {
+            (
+                Field::Name,
+                mt940::StatementLine {
+                    information_to_account_owner:
+                        Some(mt940::InformationToAccountOwner::Structured {
+                            applicant_name: Some(name),
+                            ..
+                        }),
+                    ..
+                },
+            ) => self.ctype.matches(name),
+            (
+                Field::Purpose,
+                mt940::StatementLine {
+                    information_to_account_owner:
+                        Some(mt940::InformationToAccountOwner::Structured {
+                            purpose: Some(purpose),
+                            ..
+                        }),
+                    ..
+                },
+            ) => self.ctype.matches(purpose),
+            (
+                Field::Iban,
+                mt940::StatementLine {
+                    information_to_account_owner:
+                        Some(mt940::InformationToAccountOwner::Structured {
+                            applicant_iban: Some(iban),
+                            ..
+                        }),
+                    ..
+                },
+            ) => self.ctype.matches(iban),
+            _ => false,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+enum ComparisonType {
+    Contains(String),
+    Exact(String),
+}
+
+impl ComparisonType {
+    fn matches(&self, value: &str) -> bool {
+        match self {
+            Self::Contains(str) => value.contains(str),
+            Self::Exact(str) => value == str,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
