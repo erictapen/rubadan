@@ -123,6 +123,8 @@ impl eframe::App for App {
                 .column(Column::auto())
                 .column(Column::auto())
                 .column(Column::auto())
+                .column(Column::auto())
+                .column(Column::auto())
                 .header(20.0, |mut header| {
                     header.col(|ui| {
                         ui.label(bold("date"));
@@ -134,6 +136,12 @@ impl eframe::App for App {
                     });
                     header.col(|ui| {
                         ui.label(bold("IBAN"));
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("name"));
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("purpose"));
                     });
                 })
                 .body(|mut body| {
@@ -155,6 +163,7 @@ impl eframe::App for App {
                                         amount(
                                             ui,
                                             statement_line.amount,
+                                            &statement_line.ext_debit_credit_indicator,
                                             &message.opening_balance.iso_currency_code,
                                         );
                                     });
@@ -169,6 +178,26 @@ impl eframe::App for App {
                                         iban(ui, iban_str);
                                     }
                                 });
+                                // name
+                                row.col(|ui| {
+                                    if let Some(mt940::InformationToAccountOwner::Structured {
+                                        applicant_name: Some(name_str),
+                                        ..
+                                    }) = &statement_line.information_to_account_owner
+                                    {
+                                        ui.add(Label::new(regular(name_str)).extend());
+                                    }
+                                });
+                                // purpose
+                                row.col(|ui| {
+                                    if let Some(mt940::InformationToAccountOwner::Structured {
+                                        purpose: Some(purpose_str),
+                                        ..
+                                    }) = &statement_line.information_to_account_owner
+                                    {
+                                        ui.add(Label::new(regular(purpose_str)).extend());
+                                    }
+                                });
                             });
                         }
                     }
@@ -177,7 +206,12 @@ impl eframe::App for App {
     }
 }
 
-fn amount(ui: &mut Ui, number: rust_decimal::Decimal, iso_currency_code: &str) {
+fn amount(
+    ui: &mut Ui,
+    number: rust_decimal::Decimal,
+    debit_or_credit: &mt940::ExtDebitOrCredit,
+    iso_currency_code: &str,
+) {
     let currency_sign = match iso_currency_code {
         "EUR" => "€",
         _ => {
@@ -185,8 +219,12 @@ fn amount(ui: &mut Ui, number: rust_decimal::Decimal, iso_currency_code: &str) {
             "?"
         }
     };
+    let sign = match debit_or_credit {
+        mt940::ExtDebitOrCredit::Debit | mt940::ExtDebitOrCredit::ReverseCredit => "−",
+        mt940::ExtDebitOrCredit::Credit | mt940::ExtDebitOrCredit::ReverseDebit => "",
+    };
     ui.label(regular(
-        format!("{number}{THIN_SPACE}{currency_sign}").as_str(),
+        format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str(),
     ));
 }
 
