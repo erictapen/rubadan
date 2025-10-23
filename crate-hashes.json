@@ -1,0 +1,16 @@
+{
+  "git+https://github.com/erictapen/mt940-rs?branch=information-to-account-owner#mt940@1.0.2": "09q53fw47nn1aclmgiqyhdjyz7fdn9vnmlcf18qx3fqs4kpnp0r2",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#ecolor@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#eframe@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#egui-wgpu@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#egui-winit@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#egui_extras@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#egui_glow@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#emath@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/egui?branch=parley-2#epaint@0.31.1": "0mrq8smr4ma9cajnfcmrgwdznzsza3ircfxx6jsk6w433cgxv17h",
+  "git+https://github.com/valadaptive/parley?branch=egui#0.4.0": "1ras8pm7zh1mvz7vnf48fs9y1qmafhmbg2sra4mlq2fasz5bs5z0",
+  "git+https://github.com/valadaptive/parley?branch=egui#fontique@0.4.0": "1ras8pm7zh1mvz7vnf48fs9y1qmafhmbg2sra4mlq2fasz5bs5z0",
+  "git+https://github.com/valadaptive/swash?branch=tight-bounds#0.2.2": "15m4bh7j71l6xb2hwvrd5v0jbbhlwrlnhnpdrzc0wazgila0vnv4",
+  "git+https://github.com/valadaptive/zeno?branch=tight-bounds#0.3.2": "0xa975x2wi9zjb21xa55g6nssrynhld2b85cpwlaw7ckc071qnp3"
+}

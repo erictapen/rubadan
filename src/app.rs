@@ -64,7 +64,8 @@ impl App {
         load_fonts(&cc.egui_ctx);
 
         // For quicker development speed we load a file as default
-        if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
             Self {
                 messages: Arc::new(Mutex::new(parse_mt940_file(include_bytes!("../mt940.sta")))),
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
@@ -86,7 +87,9 @@ impl App {
                 ],
                 hovered_rule: Default::default(),
             }
-        } else {
+        }
+        #[cfg(not(debug_assertions))]
+        {
             Default::default()
         }
     }
