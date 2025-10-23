@@ -92,6 +92,9 @@ impl App {
     }
 }
 
+/// The minimal allowed height of the transactions panel
+const TRANSACTIONS_HEIGHT_MIN: f32 = 50.0;
+
 impl eframe::App for App {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
@@ -100,183 +103,201 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
+            .min_height(TRANSACTIONS_HEIGHT_MIN)
+            .default_height(ctx.screen_rect().max.y * 0.5)
             .show(ctx, |ui| {
-                // ui.take_available_space();
-                if self.messages.lock().unwrap().is_empty()
-                    && ui
-                        .button(
-                            RichText::new("Pick MT940 file")
-                                .family(FontFamily::named("IBM Plex Sans ExtraLight")),
-                        )
-                        .clicked()
-                {
-                    let task = rfd::AsyncFileDialog::new().pick_file();
-                    let messages_clone = Arc::clone(&self.messages);
-                    let ctx_clone = ctx.clone();
-                    execute(async move {
-                        let file = task.await;
-                        if let Some(file) = file {
-                            let file_content = file.read().await;
-                            info!("File loaded");
-                            let parsed = parse_mt940_file(&file_content);
+                egui::ScrollArea::both()
+                    .min_scrolled_height(TRANSACTIONS_HEIGHT_MIN)
+                    .show(ui, |ui| {
+                        // ui.take_available_space();
+                        if self.messages.lock().unwrap().is_empty()
+                            && ui
+                                .button(
+                                    RichText::new("Pick MT940 file")
+                                        .family(FontFamily::named("IBM Plex Sans ExtraLight")),
+                                )
+                                .clicked()
+                        {
+                            let task = rfd::AsyncFileDialog::new().pick_file();
+                            let messages_clone = Arc::clone(&self.messages);
+                            let ctx_clone = ctx.clone();
+                            execute(async move {
+                                let file = task.await;
+                                if let Some(file) = file {
+                                    let file_content = file.read().await;
+                                    info!("File loaded");
+                                    let parsed = parse_mt940_file(&file_content);
 
-                            info!("Parsed {} MT940 messages", parsed.len());
-                            let mut messages = messages_clone.lock().unwrap();
-                            *messages = parsed;
-                            // Redraw so the user can see the result of file load even when window
-                            // isn't active.
-                            ctx_clone.request_repaint();
-                        }
-                    });
-                }
-
-                use egui_extras::{Column, TableBuilder};
-                TableBuilder::new(ui)
-                    .auto_shrink([false, false])
-                    .column(Column::auto())
-                    .column(Column::auto())
-                    .column(Column::auto())
-                    .column(Column::auto())
-                    .column(Column::auto())
-                    .header(20.0, |mut header| {
-                        header.col(|ui| {
-                            ui.label(bold("date"));
-                        });
-                        header.col(|ui| {
-                            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                ui.label(bold("amount"));
+                                    info!("Parsed {} MT940 messages", parsed.len());
+                                    let mut messages = messages_clone.lock().unwrap();
+                                    *messages = parsed;
+                                    // Redraw so the user can see the result of file load even when window
+                                    // isn't active.
+                                    ctx_clone.request_repaint();
+                                }
                             });
-                        });
-                        header.col(|ui| {
-                            ui.label(bold("IBAN"));
-                        });
-                        header.col(|ui| {
-                            ui.label(bold("name"));
-                        });
-                        header.col(|ui| {
-                            ui.label(bold("purpose"));
-                        });
-                    })
-                    .body(|mut body| {
-                        for message in &*self.messages.lock().unwrap() {
-                            for statement_line in &message.statement_lines {
-                                let highlight_row = if let Some(rule_i) = self.hovered_rule {
-                                    self.rules[rule_i].condition.matches(statement_line)
-                                } else {
-                                    false
-                                };
-                                body.row(0.0, |mut row| {
-                                    row.set_selected(highlight_row);
-                                    // date
-                                    row.col(|ui| {
-                                        ui.add(
-                                            Label::new(regular(
-                                                format!("{}", statement_line.value_date).as_str(),
-                                            ))
-                                            .extend(),
-                                        );
-                                    });
-                                    // amount
-                                    row.col(|ui| {
-                                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                            amount(
-                                                ui,
-                                                statement_line.amount,
-                                                &statement_line.ext_debit_credit_indicator,
-                                                &message.opening_balance.iso_currency_code,
-                                            );
-                                        });
-                                    });
-                                    // iban
-                                    row.col(|ui| {
-                                        if let Some(
-                                            mt940::InformationToAccountOwner::Structured {
-                                                applicant_iban: Some(iban_str),
-                                                ..
-                                            },
-                                        ) = &statement_line.information_to_account_owner
-                                        {
-                                            iban(ui, iban_str);
-                                        }
-                                    });
-                                    // name
-                                    row.col(|ui| {
-                                        if let Some(
-                                            mt940::InformationToAccountOwner::Structured {
-                                                applicant_name: Some(name_str),
-                                                ..
-                                            },
-                                        ) = &statement_line.information_to_account_owner
-                                        {
-                                            ui.add(Label::new(regular(name_str)).extend());
-                                        }
-                                    });
-                                    // purpose
-                                    row.col(|ui| {
-                                        if let Some(
-                                            mt940::InformationToAccountOwner::Structured {
-                                                purpose: Some(purpose_str),
-                                                ..
-                                            },
-                                        ) = &statement_line.information_to_account_owner
-                                        {
-                                            ui.add(Label::new(regular(purpose_str)).extend());
-                                        }
+                        }
+
+                        use egui_extras::{Column, TableBuilder};
+                        TableBuilder::new(ui)
+                            .auto_shrink([false, false])
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .header(20.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.label(bold("date"));
+                                });
+                                header.col(|ui| {
+                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                        ui.label(bold("amount"));
                                     });
                                 });
-                            }
-                        }
+                                header.col(|ui| {
+                                    ui.label(bold("IBAN"));
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("name"));
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("purpose"));
+                                });
+                            })
+                            .body(|mut body| {
+                                for message in &*self.messages.lock().unwrap() {
+                                    for statement_line in &message.statement_lines {
+                                        let highlight_row = if let Some(rule_i) = self.hovered_rule
+                                        {
+                                            self.rules[rule_i].condition.matches(statement_line)
+                                        } else {
+                                            false
+                                        };
+                                        body.row(0.0, |mut row| {
+                                            row.set_selected(highlight_row);
+                                            // date
+                                            row.col(|ui| {
+                                                ui.add(
+                                                    Label::new(regular(
+                                                        format!("{}", statement_line.value_date)
+                                                            .as_str(),
+                                                    ))
+                                                    .extend(),
+                                                );
+                                            });
+                                            // amount
+                                            row.col(|ui| {
+                                                ui.with_layout(
+                                                    Layout::right_to_left(Align::Min),
+                                                    |ui| {
+                                                        amount(
+                                                            ui,
+                                                            statement_line.amount,
+                                                            &statement_line
+                                                                .ext_debit_credit_indicator,
+                                                            &message
+                                                                .opening_balance
+                                                                .iso_currency_code,
+                                                        );
+                                                    },
+                                                );
+                                            });
+                                            // iban
+                                            row.col(|ui| {
+                                                if let Some(
+                                                    mt940::InformationToAccountOwner::Structured {
+                                                        applicant_iban: Some(iban_str),
+                                                        ..
+                                                    },
+                                                ) = &statement_line.information_to_account_owner
+                                                {
+                                                    iban(ui, iban_str);
+                                                }
+                                            });
+                                            // name
+                                            row.col(|ui| {
+                                                if let Some(
+                                                    mt940::InformationToAccountOwner::Structured {
+                                                        applicant_name: Some(name_str),
+                                                        ..
+                                                    },
+                                                ) = &statement_line.information_to_account_owner
+                                                {
+                                                    ui.add(Label::new(regular(name_str)).extend());
+                                                }
+                                            });
+                                            // purpose
+                                            row.col(|ui| {
+                                                if let Some(
+                                                    mt940::InformationToAccountOwner::Structured {
+                                                        purpose: Some(purpose_str),
+                                                        ..
+                                                    },
+                                                ) = &statement_line.information_to_account_owner
+                                                {
+                                                    ui.add(
+                                                        Label::new(regular(purpose_str)).extend(),
+                                                    );
+                                                }
+                                            });
+                                        });
+                                    }
+                                }
+                            });
                     });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add(Label::new(bold("rules")));
-            let frame = Frame::default().inner_margin(4.0);
-            let mut from = None;
-            let mut to = None;
-            let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-                for (i, r) in self.rules.clone().into_iter().enumerate() {
-                    let response = ui
-                        .dnd_drag_source(egui::Id::new(("draggable_rule", i)), i, |ui| {
-                            rule(ui, &r);
-                        })
-                        .response;
-                    if response.hovered() {
-                        self.hovered_rule = Some(i);
-                    } else if Some(i) == self.hovered_rule {
-                        self.hovered_rule = None;
+            egui::ScrollArea::both().show(ui, |ui| {
+                ui.add(Label::new(bold("rules")));
+                let frame = Frame::default().inner_margin(4.0);
+                let mut from = None;
+                let mut to = None;
+                let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
+                    for (i, r) in self.rules.clone().into_iter().enumerate() {
+                        let response = ui
+                            .dnd_drag_source(egui::Id::new(("draggable_rule", i)), i, |ui| {
+                                rule(ui, &r);
+                            })
+                            .response;
+                        if response.hovered() {
+                            self.hovered_rule = Some(i);
+                        } else if Some(i) == self.hovered_rule {
+                            self.hovered_rule = None;
+                        }
+                        // Detect drops onto this item:
+                        if let (Some(pointer), Some(hovered_payload)) = (
+                            ui.input(|i| i.pointer.interact_pos()),
+                            response.dnd_hover_payload::<usize>(),
+                        ) {
+                            let stroke = egui::Stroke::new(1.0, egui::Color32::RED);
+                            let rect = response.rect;
+                            let insert_row_id = if *hovered_payload == i {
+                                // We dragged onto ourselves
+                                ui.painter().hline(rect.x_range(), rect.center().y, stroke);
+                                i
+                            } else if pointer.y < rect.center().y {
+                                // Above us
+                                ui.painter().hline(rect.x_range(), rect.top(), stroke);
+                                i
+                            } else {
+                                // Below us
+                                ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
+                                i + 1
+                            };
+                            from = Some(hovered_payload.clone());
+                            to = Some(insert_row_id);
+                        }
                     }
-                    // Detect drops onto this item:
-                    if let (Some(pointer), Some(hovered_payload)) = (
-                        ui.input(|i| i.pointer.interact_pos()),
-                        response.dnd_hover_payload::<usize>(),
-                    ) {
-                        let stroke = egui::Stroke::new(1.0, egui::Color32::RED);
-                        let rect = response.rect;
-                        let insert_row_id = if *hovered_payload == i {
-                            // We dragged onto ourselves
-                            ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                            i
-                        } else if pointer.y < rect.center().y {
-                            // Above us
-                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
-                            i
-                        } else {
-                            // Below us
-                            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                            i + 1
-                        };
-                        from = Some(hovered_payload.clone());
-                        to = Some(insert_row_id);
-                    }
+                });
+                if let (Some(from), Some(to)) = (from, to) {
+                    ui.add(Label::new(regular(
+                        format!("from {} to {}", from, to).as_str(),
+                    )));
+                    let rule = self.rules.remove(*from);
+                    self.rules.insert(std::cmp::min(to, self.rules.len()), rule);
                 }
             });
-            if let (Some(from), Some(to)) = (from, to) {
-                ui.add(Label::new(regular(
-                    format!("from {} to {}", from, to).as_str(),
-                )));
-                let rule = self.rules.remove(*from);
-                self.rules.insert(std::cmp::min(to, self.rules.len()), rule);
-            }
         });
     }
 }
