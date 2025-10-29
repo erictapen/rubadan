@@ -58,6 +58,7 @@ pub struct App {
     messages: Arc<Mutex<Vec<mt940::Message>>>,
     rules: Vec<Rule>,
     hovered_rule: Option<usize>,
+    hints: Vec<Hint>,
 }
 
 impl App {
@@ -67,10 +68,14 @@ impl App {
         load_fonts(&cc.egui_ctx);
 
         // For quicker development speed we load a file as default
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "demo")]
         {
             Self {
-                messages: Arc::new(Mutex::new(parse_mt940_file(include_bytes!("../mt940.sta")))),
+                messages: Arc::new(Mutex::new(parse_mt940_file(
+                    // This example file is from
+                    // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
+                    include_bytes!("../sample_data/mt940.sta"),
+                ))),
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
                 rules: vec![
                     Rule {
@@ -89,25 +94,16 @@ impl App {
                     },
                 ],
                 hovered_rule: Default::default(),
+                hints: Default::default(),
             }
         }
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(feature = "demo"))]
         {
             Default::default()
         }
     }
-}
-
-/// The minimal allowed height of the transactions panel
-const TRANSACTIONS_HEIGHT_MIN: f32 = 50.0;
-
-impl eframe::App for App {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
-
-    /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top_panel")
+    fn data_panel(&mut self, ctx: &egui::Context) {
+        let response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y * 0.5)
@@ -253,7 +249,12 @@ impl eframe::App for App {
                             });
                     });
             });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        if response.response.hovered() {
+            self.hints.push(Hint::Transactions);
+        }
+    }
+    fn rules_panel(&mut self, ctx: &egui::Context) {
+        let response = egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 ui.add(Label::new(bold("rules")));
                 let frame = Frame::default().inner_margin(4.0);
@@ -305,6 +306,63 @@ impl eframe::App for App {
                 }
             });
         });
+        if response.response.hovered() {
+            self.hints.push(Hint::Rules);
+        }
+    }
+    fn bottom_bar(&mut self, ctx: &egui::Context) {
+        egui::Area::new("bottom_bar".into())
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
+            .order(egui::Order::Foreground) // ensure it draws above other panels
+            .show(ctx, |ui| {
+                ui.set_width(ctx.screen_rect().width()); // span full width
+                ui.set_height(BOTTOM_BAR_HEIGHT);
+
+                ui.horizontal(|ui| {
+                    if let Some(hint) = self.hints.last() {
+                        hint.view(ui);
+                    }
+                });
+            });
+    }
+}
+
+/// The minimal allowed height of the transactions panel
+const TRANSACTIONS_HEIGHT_MIN: f32 = 50.0;
+
+/// The fixed height of the context bar
+const BOTTOM_BAR_HEIGHT: f32 = 25.0;
+
+impl eframe::App for App {
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.hints.clear();
+
+        self.data_panel(ctx);
+        self.rules_panel(ctx);
+        self.bottom_bar(ctx);
+    }
+}
+
+// The interface element at the bottom of the screen that shows helpful text depending on which
+// element is hovered.
+#[derive(Default)]
+enum Hint {
+    #[default]
+    None,
+    Transactions,
+    Rules,
+}
+
+impl Hint {
+    fn view(&self, ui: &mut Ui) {
+        let text = match self {
+            Self::None => "",
+            Self::Transactions => "Transactions",
+            Self::Rules => "Rules",
+        };
+        ui.add(Label::new(regular(text)));
     }
 }
 

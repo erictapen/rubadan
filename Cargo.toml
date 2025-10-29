@@ -3,6 +3,9 @@ name = "implementation"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["demo"]
+demo = []
 
 [dependencies]
 egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }

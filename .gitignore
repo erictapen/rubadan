@@ -1,4 +1,3 @@
 dist/
-*.sta
 *.json
 !crate-hashes.json
