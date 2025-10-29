@@ -5,6 +5,9 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
+
 const THIN_SPACE: &str = "\u{2009}";
 
 fn load_fonts(ctx: &egui::Context) {
@@ -366,7 +369,7 @@ struct Rule {
     category: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
 enum Condition {
     Plain(Comparison),
     Not(Comparison),
@@ -385,7 +388,13 @@ impl Condition {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl Default for Condition {
+    fn default() -> Self {
+        Self::Plain(Default::default())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct Comparison {
     field: Field,
     ctype: ComparisonType,
@@ -434,8 +443,14 @@ impl Comparison {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum ComparisonType {
-    Contains(String),
     Exact(String),
+    Contains(String),
+}
+
+impl Default for ComparisonType {
+    fn default() -> Self {
+        Self::Exact(Default::default())
+    }
 }
 
 impl ComparisonType {
@@ -447,8 +462,9 @@ impl ComparisonType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 enum Field {
+    #[default]
     Name,
     Purpose,
     Iban,
