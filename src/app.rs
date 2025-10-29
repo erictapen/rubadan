@@ -369,6 +369,7 @@ struct Rule {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Condition {
     Plain(Comparison),
+    Not(Comparison),
     And(Box<Condition>, Box<Condition>),
     Or(Box<Condition>, Box<Condition>),
 }
@@ -377,6 +378,7 @@ impl Condition {
     fn matches(&self, sl: &mt940::StatementLine) -> bool {
         match self {
             Self::Plain(comparison) => comparison.matches(sl),
+            Self::Not(comparison) => !comparison.matches(sl),
             Self::And(c1, c2) => c1.matches(sl) && c2.matches(sl),
             Self::Or(c1, c2) => c1.matches(sl) || c2.matches(sl),
         }
