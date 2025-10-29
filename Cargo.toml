@@ -4,13 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["demo"]
+default = ["demo", "egui_parley"]
 demo = []
+egui_parley = ["dep:egui_parley", "dep:epaint_parley", "dep:egui_extras_parley", "dep:eframe_parley"]
+egui_latest = ["dep:egui_latest", "dep:epaint_latest", "dep:egui_extras_latest", "dep:eframe_latest"]
+
 
 [dependencies]
-egui = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-epaint = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-egui_extras = { version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+egui_parley = { package = "egui", optional = true, version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+egui_latest = { package = "egui", optional = true, version = "*" }
+epaint_parley = { package = "epaint", optional = true, version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+epaint_latest = { package = "epaint", optional = true, version = "*", default-features = false }
+egui_extras_parley = { package = "egui_extras", optional = true, version = "*", default-features = false, git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+egui_extras_latest = { package = "egui_extras", optional = true, version = "*", default-features = false }
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 log = "*"
@@ -24,13 +30,15 @@ strum_macros = "*"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "*"
-eframe = { version = "*", default-features = false, features = [ "wayland", "glow", "x11" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "wayland", "glow", "x11" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "wayland", "glow", "x11" ] }
 futures = "*"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "*", default-features = false }
 web-sys = { version = "*", default-features = false }
-eframe = { version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "glow" ] }
 
 [profile.release]
 opt-level = 2

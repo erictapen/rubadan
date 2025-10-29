@@ -1,11 +1,27 @@
+#[cfg(feature = "egui_parley")]
+use eframe_parley as eframe;
+#[cfg(feature = "egui_parley")]
+use egui_extras_parley as egui_extras;
+#[cfg(feature = "egui_parley")]
+use egui_parley as egui;
+
+#[cfg(feature = "egui_latest")]
+use eframe_latest as eframe;
+#[cfg(feature = "egui_latest")]
+use egui_extras_latest as egui_extras;
+#[cfg(feature = "egui_latest")]
+use egui_latest as egui;
+
 use crate::execute;
+#[cfg(feature = "egui_latest")]
+use egui::FontFamily;
+#[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 use egui::{Align, Frame, Label, Layout, RichText, Ui};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 const THIN_SPACE: &str = "\u{2009}";
@@ -34,11 +50,19 @@ fn load_fonts(ctx: &egui::Context) {
 }
 
 fn regular(text: &str) -> RichText {
-    RichText::new(text).family(FontFamily::named("IBM Plex Sans"))
+    #[cfg(feature = "egui_parley")]
+    let family = FontFamily::Named("IBM Plex Sans".into());
+    #[cfg(feature = "egui_latest")]
+    let family = FontFamily::Name("IBM Plex Sans".into());
+    RichText::new(text).family(family)
 }
 
 fn bold(text: &str) -> RichText {
-    RichText::new(text).family(FontFamily::named("IBM Plex Sans Bold"))
+    #[cfg(feature = "egui_parley")]
+    let family = FontFamily::Named("IBM Plex Sans Bold".into());
+    #[cfg(feature = "egui_latest")]
+    let family = FontFamily::Name("IBM Plex Sans Bold".into());
+    RichText::new(text).family(family)
 }
 
 fn parse_mt940_file(bytes: &[u8]) -> Vec<mt940::Message> {
@@ -111,14 +135,8 @@ impl App {
                 egui::ScrollArea::both()
                     .min_scrolled_height(TRANSACTIONS_HEIGHT_MIN)
                     .show(ui, |ui| {
-                        // ui.take_available_space();
                         if self.messages.lock().unwrap().is_empty()
-                            && ui
-                                .button(
-                                    RichText::new("Pick MT940 file")
-                                        .family(FontFamily::named("IBM Plex Sans ExtraLight")),
-                                )
-                                .clicked()
+                            && ui.button(bold("Pick MT940 file")).clicked()
                         {
                             let task = rfd::AsyncFileDialog::new().pick_file();
                             let messages_clone = Arc::clone(&self.messages);
@@ -260,7 +278,7 @@ impl App {
                 let frame = Frame::default().inner_margin(4.0);
                 let mut from = None;
                 let mut to = None;
-                let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
+                let (_, _) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
                     for (i, r) in self.rules.clone().into_iter().enumerate() {
                         let response = ui
                             .dnd_drag_source(egui::Id::new(("draggable_rule", i)), i, |ui| {

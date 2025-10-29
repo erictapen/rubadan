@@ -1,3 +1,13 @@
+#[cfg(feature = "egui_parley")]
+use eframe_parley as eframe;
+#[cfg(all(not(target_arch = "wasm32"), feature = "egui_parley"))]
+use egui_parley as egui;
+
+#[cfg(feature = "egui_latest")]
+use eframe_latest as eframe;
+#[cfg(all(not(target_arch = "wasm32"), feature = "egui_latest"))]
+use egui_latest as egui;
+
 use implementation::App;
 
 #[cfg(not(target_arch = "wasm32"))]
