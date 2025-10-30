@@ -105,14 +105,14 @@ impl App {
                     Rule {
                         condition: Condition::Plain(Comparison {
                             field: Field::Purpose,
-                            ctype: ComparisonType::Contains("cafe".to_string()),
+                            ctype: ComparisonType::Contains("MINT".to_string()),
                         }),
                         category: "expenses:4650bewirtungskosten".to_string(),
                     },
                     Rule {
                         condition: Condition::Plain(Comparison {
                             field: Field::Purpose,
-                            ctype: ComparisonType::Contains("Anlage".to_string()),
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
                         }),
                         category: "expenses:4650bewirtungskosten".to_string(),
                     },
@@ -126,6 +126,29 @@ impl App {
             Default::default()
         }
     }
+    fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+        if self.messages.lock().unwrap().is_empty() && ui.button(bold("Pick MT940 file")).clicked()
+        {
+            let task = rfd::AsyncFileDialog::new().pick_file();
+            let messages_clone = Arc::clone(&self.messages);
+            let ctx_clone = ctx.clone();
+            execute(async move {
+                let file = task.await;
+                if let Some(file) = file {
+                    let file_content = file.read().await;
+                    info!("File loaded");
+                    let parsed = parse_mt940_file(&file_content);
+
+                    info!("Parsed {} MT940 messages", parsed.len());
+                    let mut messages = messages_clone.lock().unwrap();
+                    *messages = parsed;
+                    // Redraw so the user can see the result of file load even when window
+                    // isn't active.
+                    ctx_clone.request_repaint();
+                }
+            });
+        }
+    }
     fn data_panel(&mut self, ctx: &egui::Context) {
         let response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
@@ -135,28 +158,7 @@ impl App {
                 egui::ScrollArea::both()
                     .min_scrolled_height(TRANSACTIONS_HEIGHT_MIN)
                     .show(ui, |ui| {
-                        if self.messages.lock().unwrap().is_empty()
-                            && ui.button(bold("Pick MT940 file")).clicked()
-                        {
-                            let task = rfd::AsyncFileDialog::new().pick_file();
-                            let messages_clone = Arc::clone(&self.messages);
-                            let ctx_clone = ctx.clone();
-                            execute(async move {
-                                let file = task.await;
-                                if let Some(file) = file {
-                                    let file_content = file.read().await;
-                                    info!("File loaded");
-                                    let parsed = parse_mt940_file(&file_content);
-
-                                    info!("Parsed {} MT940 messages", parsed.len());
-                                    let mut messages = messages_clone.lock().unwrap();
-                                    *messages = parsed;
-                                    // Redraw so the user can see the result of file load even when window
-                                    // isn't active.
-                                    ctx_clone.request_repaint();
-                                }
-                            });
-                        }
+                        self.file_load_button(ctx, ui);
 
                         use egui_extras::{Column, TableBuilder};
                         TableBuilder::new(ui)
@@ -188,14 +190,7 @@ impl App {
                             .body(|mut body| {
                                 for message in &*self.messages.lock().unwrap() {
                                     for statement_line in &message.statement_lines {
-                                        let highlight_row = if let Some(rule_i) = self.hovered_rule
-                                        {
-                                            self.rules[rule_i].condition.matches(statement_line)
-                                        } else {
-                                            false
-                                        };
                                         body.row(0.0, |mut row| {
-                                            row.set_selected(highlight_row);
                                             // date
                                             row.col(|ui| {
                                                 ui.add(
