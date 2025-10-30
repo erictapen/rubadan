@@ -86,8 +86,8 @@ struct Money {
     credit: bool,
 }
 
-impl Money {
-    fn ui(&self, ui: &mut Ui) {
+impl Renderable for Money {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
         let currency_sign = match self.iso_currency_code.as_str() {
             "EUR" => "€",
             c => {
@@ -100,14 +100,15 @@ impl Money {
             false => "",
         };
         let number = self.amount;
-        ui.label(regular(
-            format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str(),
-        ));
+        ui.label(
+            regular(format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str())
+                .background_color(style.color()),
+        );
     }
 }
 
 /// Distinction for how hovering over one element should highlight others
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 enum SelectStyle {
     /// The element is not affected at all
     #[default]
@@ -122,13 +123,26 @@ enum SelectStyle {
     Suggestion,
 }
 
+impl SelectStyle {
+    fn color(&self) -> egui::Color32 {
+        use egui::Color32;
+        match self {
+            Self::Unaffected => Color32::TRANSPARENT,
+            Self::Hovered => Color32::DARK_BLUE,
+            Self::Related1 => Color32::BLUE,
+            Self::Related2 => Color32::LIGHT_BLUE,
+            Self::Suggestion => Color32::YELLOW,
+        }
+    }
+}
+
 /// Wrapper type so we can annotate wether a cell is highlighted
-struct Highlightable<T> {
+struct Highlightable<T: Renderable> {
     inner: T,
     style: SelectStyle,
 }
 
-impl<T> Highlightable<T> {
+impl<T: Renderable> Highlightable<T> {
     fn new(inner: T) -> Self {
         Self {
             inner,
@@ -137,6 +151,28 @@ impl<T> Highlightable<T> {
     }
     fn into_inner(self) -> T {
         self.inner
+    }
+    fn ui(&self, ui: &mut Ui) {
+        self.inner.ui(ui, self.style);
+    }
+}
+
+trait Renderable {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle);
+}
+
+impl Renderable for String {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
+        ui.add(Label::new(regular(self).background_color(style.color())).extend());
+    }
+}
+
+impl Renderable for chrono::NaiveDate {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
+        ui.add(
+            Label::new(regular(format!("{}", self).as_str()).background_color(style.color()))
+                .extend(),
+        );
     }
 }
 
@@ -184,9 +220,49 @@ impl DataRow {
             })
             .collect()
     }
+    fn set_style_to_every_field(&mut self, style: SelectStyle) {
+        self.date.style = style;
+        self.money.style = style;
+        if let Some(v) = self.iban.as_mut() {
+            v.style = style;
+        }
+        if let Some(v) = self.name.as_mut() {
+            v.style = style;
+        }
+        if let Some(v) = self.purpose.as_mut() {
+            v.style = style;
+        }
+    }
 
-    fn highlight(&mut self, rule: &Rule) {
-        // TODO
+    fn highlight(&mut self, rule: &Option<Rule>, condition: &Option<Condition>) {
+        if rule.as_ref().is_some_and(|r| r.condition.matches(self)) {
+            self.set_style_to_every_field(SelectStyle::Related2);
+        } else if condition.as_ref().is_some_and(|c| c.matches(self)) {
+            if let Some(Condition::Plain(comp)) = condition {
+                match &comp.field {
+                    Field::Name => {
+                        if let Some(v) = self.name.as_mut() {
+                            v.style = SelectStyle::Related1;
+                        }
+                    }
+                    Field::Purpose => {
+                        if let Some(v) = self.purpose.as_mut() {
+                            v.style = SelectStyle::Related1;
+                        }
+                    }
+                    Field::Iban => {
+                        if let Some(v) = self.iban.as_mut() {
+                            v.style = SelectStyle::Related1;
+                        }
+                    }
+                }
+            }
+        } else {
+            self.clear_highlight();
+        }
+    }
+    fn clear_highlight(&mut self) {
+        self.set_style_to_every_field(Default::default());
     }
 }
 
@@ -303,42 +379,33 @@ impl App {
                                     body.row(0.0, |mut row| {
                                         // date
                                         row.col(|ui| {
-                                            ui.add(
-                                                Label::new(regular(
-                                                    format!("{}", entry.date.inner).as_str(),
-                                                ))
-                                                .extend(),
-                                            );
+                                            entry.date.ui(ui);
                                         });
                                         // amount
                                         row.col(|ui| {
                                             ui.with_layout(
                                                 Layout::right_to_left(Align::Min),
                                                 |ui| {
-                                                    entry.money.inner.ui(ui);
+                                                    entry.money.ui(ui);
                                                 },
                                             );
                                         });
                                         // iban
                                         row.col(|ui| {
-                                            if let Some(iban_str) = &entry.iban {
-                                                iban(ui, &iban_str.inner);
+                                            if let Some(ibanh) = &entry.iban {
+                                                ibanh.ui(ui);
                                             }
                                         });
                                         // name
                                         row.col(|ui| {
-                                            if let Some(name_str) = &entry.name {
-                                                ui.add(
-                                                    Label::new(regular(&name_str.inner)).extend(),
-                                                );
+                                            if let Some(nameh) = &entry.name {
+                                                nameh.ui(ui);
                                             }
                                         });
                                         // purpose
                                         row.col(|ui| {
-                                            if let Some(purpose) = &entry.purpose {
-                                                ui.add(
-                                                    Label::new(regular(&purpose.inner)).extend(),
-                                                );
+                                            if let Some(purposeh) = &entry.purpose {
+                                                purposeh.ui(ui);
                                             }
                                         });
                                     });
@@ -351,7 +418,8 @@ impl App {
         }
     }
     fn rules_panel(&mut self, ctx: &egui::Context) {
-        let mut hovered_rule: Option<usize> = None;
+        let mut hovered_rule: Option<Rule> = None;
+        let mut hovered_condition: Option<Condition> = None;
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
@@ -360,14 +428,14 @@ impl App {
                 let mut from = None;
                 let mut to = None;
                 let (_, _) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-                    for (i, r) in self.rules.clone().into_iter().enumerate() {
+                    for (i, rule) in self.rules.clone().into_iter().enumerate() {
                         let response = ui
                             .dnd_drag_source(egui::Id::new(("draggable_rule", i)), i, |ui| {
-                                rule(ui, &r);
+                                rule.ui(ui, &mut hovered_condition);
                             })
                             .response;
                         if response.hovered() {
-                            hovered_rule = Some(i);
+                            hovered_rule = Some(rule.clone());
                         };
                         // Detect drops onto this item:
                         if let (Some(pointer), Some(hovered_payload)) = (
@@ -407,10 +475,9 @@ impl App {
             self.hints.push(Hint::Rules);
         }
 
-        if let Some(hovered_rule) = hovered_rule {
-            for entry in &mut *self.data.lock().unwrap() {
-                entry.highlight(&self.rules[hovered_rule]);
-            }
+        // might be inefficient?
+        for entry in &mut *self.data.lock().unwrap() {
+            entry.highlight(&hovered_rule, &hovered_condition);
         }
     }
     fn bottom_bar(&mut self, ctx: &egui::Context) {
@@ -442,6 +509,8 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.hints.clear();
 
+        #[cfg(debug_assertions)]
+        // ctx.set_debug_on_hover(true);
         self.data_panel(ctx);
         self.rules_panel(ctx);
         self.bottom_bar(ctx);
@@ -469,30 +538,6 @@ impl Hint {
     }
 }
 
-fn rule(ui: &mut Ui, rule: &Rule) {
-    ui.horizontal(|ui| {
-        ui.add(Label::new(regular("When")));
-        condition(ui, &rule.condition);
-        ui.add(Label::new(regular(&rule.category)));
-    });
-}
-
-fn condition(ui: &mut Ui, condition: &Condition) {
-    match condition {
-        Condition::Plain(Comparison {
-            field,
-            ctype: ComparisonType::Contains(value),
-        }) => {
-            ui.add(Label::new(regular(
-                format!("{field:?} contains \"{value}\"").as_str(),
-            )));
-        }
-        _ => {
-            unimplemented!()
-        }
-    }
-}
-
 fn iban(ui: &mut Ui, iban: &str) {
     if let Ok(iban) = iban.parse::<iban::Iban>() {
         ui.add(Label::new(regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())).extend());
@@ -508,21 +553,51 @@ struct Rule {
     category: String,
 }
 
+impl Rule {
+    fn ui(&self, ui: &mut Ui, hovered_condition: &mut Option<Condition>) {
+        ui.horizontal(|ui| {
+            ui.add(Label::new(regular("When")));
+            self.condition.ui(ui, hovered_condition);
+            ui.add(Label::new(regular(&self.category)));
+        });
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
 enum Condition {
     Plain(Comparison),
-    Not(Comparison),
+    Not(Box<Condition>),
     And(Box<Condition>, Box<Condition>),
     Or(Box<Condition>, Box<Condition>),
 }
 
 impl Condition {
-    fn matches(&self, sl: &mt940::StatementLine) -> bool {
+    fn matches(&self, entry: &DataRow) -> bool {
         match self {
-            Self::Plain(comparison) => comparison.matches(sl),
-            Self::Not(comparison) => !comparison.matches(sl),
-            Self::And(c1, c2) => c1.matches(sl) && c2.matches(sl),
-            Self::Or(c1, c2) => c1.matches(sl) || c2.matches(sl),
+            Self::Plain(comparison) => comparison.matches(entry),
+            Self::Not(comparison) => !comparison.matches(entry),
+            Self::And(c1, c2) => c1.matches(entry) && c2.matches(entry),
+            Self::Or(c1, c2) => c1.matches(entry) || c2.matches(entry),
+        }
+    }
+    fn ui(&self, ui: &mut Ui, hovered_condition: &mut Option<Condition>) {
+        match self {
+            Condition::Plain(Comparison {
+                field,
+                ctype: ComparisonType::Contains(value),
+            }) => {
+                if ui
+                    .add(Label::new(regular(
+                        format!("{field:?} contains \"{value}\"").as_str(),
+                    )))
+                    .hovered()
+                {
+                    *hovered_condition = Some(self.clone());
+                }
+            }
+            _ => {
+                unimplemented!()
+            }
         }
     }
 }
@@ -540,38 +615,26 @@ struct Comparison {
 }
 
 impl Comparison {
-    fn matches(&self, sl: &mt940::StatementLine) -> bool {
-        match (&self.field, sl) {
+    fn matches(&self, entry: &DataRow) -> bool {
+        match (&self.field, entry) {
             (
                 Field::Name,
-                mt940::StatementLine {
-                    information_to_account_owner:
-                        Some(mt940::InformationToAccountOwner::Structured {
-                            applicant_name: Some(name),
-                            ..
-                        }),
+                DataRow {
+                    name: Some(Highlightable { inner: name, .. }),
                     ..
                 },
             ) => self.ctype.matches(name),
             (
                 Field::Purpose,
-                mt940::StatementLine {
-                    information_to_account_owner:
-                        Some(mt940::InformationToAccountOwner::Structured {
-                            purpose: Some(purpose),
-                            ..
-                        }),
+                DataRow {
+                    purpose: Some(Highlightable { inner: purpose, .. }),
                     ..
                 },
             ) => self.ctype.matches(purpose),
             (
                 Field::Iban,
-                mt940::StatementLine {
-                    information_to_account_owner:
-                        Some(mt940::InformationToAccountOwner::Structured {
-                            applicant_iban: Some(iban),
-                            ..
-                        }),
+                DataRow {
+                    iban: Some(Highlightable { inner: iban, .. }),
                     ..
                 },
             ) => self.ctype.matches(iban),
