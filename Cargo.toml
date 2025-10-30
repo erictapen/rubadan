@@ -26,6 +26,7 @@ rust_decimal = "*"
 iban = "*"
 strum = "*"
 strum_macros = "*"
+chrono = "*"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

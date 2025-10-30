@@ -65,7 +65,7 @@ fn bold(text: &str) -> RichText {
     RichText::new(text).family(family)
 }
 
-fn parse_mt940_file(bytes: &[u8]) -> Vec<mt940::Message> {
+fn parse_mt940_file(bytes: &[u8]) -> Vec<DataRow> {
     let file_str = &String::from_utf8(bytes.to_vec()).unwrap();
     if file_str.contains(":61:220229") {
         warn!("Warning! Had to replace an occurence of an impossible date.",);
@@ -75,13 +75,125 @@ fn parse_mt940_file(bytes: &[u8]) -> Vec<mt940::Message> {
         &file_str.replace(":61:220229", ":61:220301"),
     ))
     .unwrap_or_else(|e| panic!("{}", e))
+    .into_iter()
+    .flat_map(DataRow::from_message)
+    .collect()
+}
+
+struct Money {
+    amount: rust_decimal::Decimal,
+    iso_currency_code: String,
+    credit: bool,
+}
+
+impl Money {
+    fn ui(&self, ui: &mut Ui) {
+        let currency_sign = match self.iso_currency_code.as_str() {
+            "EUR" => "€",
+            c => {
+                error!("Unknown currency code {}", c);
+                "?"
+            }
+        };
+        let sign = match self.credit {
+            true => "−",
+            false => "",
+        };
+        let number = self.amount;
+        ui.label(regular(
+            format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str(),
+        ));
+    }
+}
+
+/// Distinction for how hovering over one element should highlight others
+#[derive(Default)]
+enum SelectStyle {
+    /// The element is not affected at all
+    #[default]
+    Unaffected,
+    /// The element is directly hovered over
+    Hovered,
+    /// Related to what is hovered on, first degree
+    Related1,
+    /// Related to what is hovered on, second degree
+    Related2,
+    /// Suggestion for user input, e.g. for suggesting a column name while creating a rule
+    Suggestion,
+}
+
+/// Wrapper type so we can annotate wether a cell is highlighted
+struct Highlightable<T> {
+    inner: T,
+    style: SelectStyle,
+}
+
+impl<T> Highlightable<T> {
+    fn new(inner: T) -> Self {
+        Self {
+            inner,
+            style: Default::default(),
+        }
+    }
+    fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+struct DataRow {
+    date: Highlightable<chrono::NaiveDate>,
+    money: Highlightable<Money>,
+    iban: Option<Highlightable<String>>,
+    name: Option<Highlightable<String>>,
+    purpose: Option<Highlightable<String>>,
+    annotation: Option<String>,
+}
+
+impl DataRow {
+    fn from_message(message: mt940::Message) -> Vec<Self> {
+        use mt940::ExtDebitOrCredit;
+
+        let iso_currency_code = message.opening_balance.iso_currency_code;
+        message
+            .statement_lines
+            .into_iter()
+            .map(|sl| {
+                let credit = sl.ext_debit_credit_indicator == ExtDebitOrCredit::Credit
+                    || sl.ext_debit_credit_indicator == ExtDebitOrCredit::ReverseDebit;
+                let (name, iban, purpose) = match sl.information_to_account_owner {
+                    Some(mt940::InformationToAccountOwner::Structured {
+                        applicant_name,
+                        applicant_iban,
+                        purpose,
+                        ..
+                    }) => (applicant_name, applicant_iban, purpose),
+                    None | Some(mt940::InformationToAccountOwner::Plain(_)) => (None, None, None),
+                };
+                DataRow {
+                    date: Highlightable::new(sl.value_date),
+                    money: Highlightable::new(Money {
+                        amount: sl.amount,
+                        iso_currency_code: iso_currency_code.clone(),
+                        credit,
+                    }),
+                    iban: iban.map(Highlightable::new),
+                    name: name.map(Highlightable::new),
+                    purpose: purpose.map(Highlightable::new),
+                    annotation: None,
+                }
+            })
+            .collect()
+    }
+
+    fn highlight(&mut self, rule: &Rule) {
+        // TODO
+    }
 }
 
 #[derive(Default)]
 pub struct App {
-    messages: Arc<Mutex<Vec<mt940::Message>>>,
+    data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
-    hovered_rule: Option<usize>,
     hints: Vec<Hint>,
 }
 
@@ -94,12 +206,13 @@ impl App {
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         {
+            let data = parse_mt940_file(
+                // This example file is from
+                // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
+                include_bytes!("../sample_data/mt940.sta"),
+            );
             Self {
-                messages: Arc::new(Mutex::new(parse_mt940_file(
-                    // This example file is from
-                    // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
-                    include_bytes!("../sample_data/mt940.sta"),
-                ))),
+                data: Arc::new(Mutex::new(data)),
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
                 rules: vec![
                     Rule {
@@ -117,7 +230,6 @@ impl App {
                         category: "expenses:4650bewirtungskosten".to_string(),
                     },
                 ],
-                hovered_rule: Default::default(),
                 hints: Default::default(),
             }
         }
@@ -127,10 +239,9 @@ impl App {
         }
     }
     fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
-        if self.messages.lock().unwrap().is_empty() && ui.button(bold("Pick MT940 file")).clicked()
-        {
+        if self.data.lock().unwrap().is_empty() && ui.button(bold("Pick MT940 file")).clicked() {
             let task = rfd::AsyncFileDialog::new().pick_file();
-            let messages_clone = Arc::clone(&self.messages);
+            let data_clone = Arc::clone(&self.data);
             let ctx_clone = ctx.clone();
             execute(async move {
                 let file = task.await;
@@ -138,10 +249,10 @@ impl App {
                     let file_content = file.read().await;
                     info!("File loaded");
                     let parsed = parse_mt940_file(&file_content);
+                    info!("Parsed {} MT940 rows", parsed.len());
 
-                    info!("Parsed {} MT940 messages", parsed.len());
-                    let mut messages = messages_clone.lock().unwrap();
-                    *messages = parsed;
+                    let mut data = data_clone.lock().unwrap();
+                    *data = parsed;
                     // Redraw so the user can see the result of file load even when window
                     // isn't active.
                     ctx_clone.request_repaint();
@@ -188,76 +299,49 @@ impl App {
                                 });
                             })
                             .body(|mut body| {
-                                for message in &*self.messages.lock().unwrap() {
-                                    for statement_line in &message.statement_lines {
-                                        body.row(0.0, |mut row| {
-                                            // date
-                                            row.col(|ui| {
-                                                ui.add(
-                                                    Label::new(regular(
-                                                        format!("{}", statement_line.value_date)
-                                                            .as_str(),
-                                                    ))
-                                                    .extend(),
-                                                );
-                                            });
-                                            // amount
-                                            row.col(|ui| {
-                                                ui.with_layout(
-                                                    Layout::right_to_left(Align::Min),
-                                                    |ui| {
-                                                        amount(
-                                                            ui,
-                                                            statement_line.amount,
-                                                            &statement_line
-                                                                .ext_debit_credit_indicator,
-                                                            &message
-                                                                .opening_balance
-                                                                .iso_currency_code,
-                                                        );
-                                                    },
-                                                );
-                                            });
-                                            // iban
-                                            row.col(|ui| {
-                                                if let Some(
-                                                    mt940::InformationToAccountOwner::Structured {
-                                                        applicant_iban: Some(iban_str),
-                                                        ..
-                                                    },
-                                                ) = &statement_line.information_to_account_owner
-                                                {
-                                                    iban(ui, iban_str);
-                                                }
-                                            });
-                                            // name
-                                            row.col(|ui| {
-                                                if let Some(
-                                                    mt940::InformationToAccountOwner::Structured {
-                                                        applicant_name: Some(name_str),
-                                                        ..
-                                                    },
-                                                ) = &statement_line.information_to_account_owner
-                                                {
-                                                    ui.add(Label::new(regular(name_str)).extend());
-                                                }
-                                            });
-                                            // purpose
-                                            row.col(|ui| {
-                                                if let Some(
-                                                    mt940::InformationToAccountOwner::Structured {
-                                                        purpose: Some(purpose_str),
-                                                        ..
-                                                    },
-                                                ) = &statement_line.information_to_account_owner
-                                                {
-                                                    ui.add(
-                                                        Label::new(regular(purpose_str)).extend(),
-                                                    );
-                                                }
-                                            });
+                                for entry in &*self.data.lock().unwrap() {
+                                    body.row(0.0, |mut row| {
+                                        // date
+                                        row.col(|ui| {
+                                            ui.add(
+                                                Label::new(regular(
+                                                    format!("{}", entry.date.inner).as_str(),
+                                                ))
+                                                .extend(),
+                                            );
                                         });
-                                    }
+                                        // amount
+                                        row.col(|ui| {
+                                            ui.with_layout(
+                                                Layout::right_to_left(Align::Min),
+                                                |ui| {
+                                                    entry.money.inner.ui(ui);
+                                                },
+                                            );
+                                        });
+                                        // iban
+                                        row.col(|ui| {
+                                            if let Some(iban_str) = &entry.iban {
+                                                iban(ui, &iban_str.inner);
+                                            }
+                                        });
+                                        // name
+                                        row.col(|ui| {
+                                            if let Some(name_str) = &entry.name {
+                                                ui.add(
+                                                    Label::new(regular(&name_str.inner)).extend(),
+                                                );
+                                            }
+                                        });
+                                        // purpose
+                                        row.col(|ui| {
+                                            if let Some(purpose) = &entry.purpose {
+                                                ui.add(
+                                                    Label::new(regular(&purpose.inner)).extend(),
+                                                );
+                                            }
+                                        });
+                                    });
                                 }
                             });
                     });
@@ -267,6 +351,8 @@ impl App {
         }
     }
     fn rules_panel(&mut self, ctx: &egui::Context) {
+        let mut hovered_rule: Option<usize> = None;
+
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 ui.add(Label::new(bold("rules")));
@@ -281,10 +367,8 @@ impl App {
                             })
                             .response;
                         if response.hovered() {
-                            self.hovered_rule = Some(i);
-                        } else if Some(i) == self.hovered_rule {
-                            self.hovered_rule = None;
-                        }
+                            hovered_rule = Some(i);
+                        };
                         // Detect drops onto this item:
                         if let (Some(pointer), Some(hovered_payload)) = (
                             ui.input(|i| i.pointer.interact_pos()),
@@ -321,6 +405,12 @@ impl App {
         });
         if response.response.hovered() {
             self.hints.push(Hint::Rules);
+        }
+
+        if let Some(hovered_rule) = hovered_rule {
+            for entry in &mut *self.data.lock().unwrap() {
+                entry.highlight(&self.rules[hovered_rule]);
+            }
         }
     }
     fn bottom_bar(&mut self, ctx: &egui::Context) {
@@ -401,28 +491,6 @@ fn condition(ui: &mut Ui, condition: &Condition) {
             unimplemented!()
         }
     }
-}
-
-fn amount(
-    ui: &mut Ui,
-    number: rust_decimal::Decimal,
-    debit_or_credit: &mt940::ExtDebitOrCredit,
-    iso_currency_code: &str,
-) {
-    let currency_sign = match iso_currency_code {
-        "EUR" => "€",
-        _ => {
-            error!("Unknown currency code {}", iso_currency_code);
-            "?"
-        }
-    };
-    let sign = match debit_or_credit {
-        mt940::ExtDebitOrCredit::Debit | mt940::ExtDebitOrCredit::ReverseCredit => "−",
-        mt940::ExtDebitOrCredit::Credit | mt940::ExtDebitOrCredit::ReverseDebit => "",
-    };
-    ui.label(regular(
-        format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str(),
-    ));
 }
 
 fn iban(ui: &mut Ui, iban: &str) {
