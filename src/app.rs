@@ -176,10 +176,35 @@ impl Renderable for chrono::NaiveDate {
     }
 }
 
+/// Wrapper type for an Iban
+struct RawIban(String);
+
+impl Renderable for RawIban {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
+        if let Ok(iban) = self.0.parse::<iban::Iban>() {
+            ui.add(
+                Label::new(
+                    regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())
+                        .background_color(style.color()),
+                )
+                .extend(),
+            );
+        } else {
+            ui.add(
+                Label::new(
+                    regular(format!("{}{THIN_SPACE}❌", self.0).as_str())
+                        .background_color(style.color()),
+                )
+                .extend(),
+            );
+        }
+    }
+}
+
 struct DataRow {
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
-    iban: Option<Highlightable<String>>,
+    iban: Option<Highlightable<RawIban>>,
     name: Option<Highlightable<String>>,
     purpose: Option<Highlightable<String>>,
     annotation: Option<String>,
@@ -212,7 +237,7 @@ impl DataRow {
                         iso_currency_code: iso_currency_code.clone(),
                         credit,
                     }),
-                    iban: iban.map(Highlightable::new),
+                    iban: iban.map(RawIban).map(Highlightable::new),
                     name: name.map(Highlightable::new),
                     purpose: purpose.map(Highlightable::new),
                     annotation: None,
@@ -510,7 +535,7 @@ impl eframe::App for App {
         self.hints.clear();
 
         #[cfg(debug_assertions)]
-        // ctx.set_debug_on_hover(true);
+        ctx.set_debug_on_hover(true);
         self.data_panel(ctx);
         self.rules_panel(ctx);
         self.bottom_bar(ctx);
@@ -535,14 +560,6 @@ impl Hint {
             Self::Rules => "Rules",
         };
         ui.add(Label::new(regular(text)));
-    }
-}
-
-fn iban(ui: &mut Ui, iban: &str) {
-    if let Ok(iban) = iban.parse::<iban::Iban>() {
-        ui.add(Label::new(regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())).extend());
-    } else {
-        ui.add(Label::new(regular(format!("{iban}{THIN_SPACE}❌").as_str())).extend());
     }
 }
 
@@ -593,6 +610,7 @@ impl Condition {
                     .hovered()
                 {
                     *hovered_condition = Some(self.clone());
+                    info!("hovering condition {self:?}");
                 }
             }
             _ => {
@@ -637,7 +655,7 @@ impl Comparison {
                     iban: Some(Highlightable { inner: iban, .. }),
                     ..
                 },
-            ) => self.ctype.matches(iban),
+            ) => self.ctype.matches(&iban.0),
             _ => false,
         }
     }
