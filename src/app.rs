@@ -4,6 +4,8 @@ use eframe_parley as eframe;
 use egui_extras_parley as egui_extras;
 #[cfg(feature = "egui_parley")]
 use egui_parley as egui;
+#[cfg(feature = "egui_parley")]
+use emath_parley as emath;
 
 #[cfg(feature = "egui_latest")]
 use eframe_latest as eframe;
@@ -11,13 +13,16 @@ use eframe_latest as eframe;
 use egui_extras_latest as egui_extras;
 #[cfg(feature = "egui_latest")]
 use egui_latest as egui;
+#[cfg(feature = "egui_latest")]
+use emath_latest as emath;
 
 use crate::execute;
 #[cfg(feature = "egui_latest")]
 use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
-use egui::{Align, Frame, Label, Layout, RichText, Ui};
+
+use egui::{Align, Color32, InnerResponse, Label, Layout, Response, RichText, Ui};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -25,6 +30,8 @@ use std::sync::{Arc, Mutex};
 use strum_macros::EnumIter;
 
 const THIN_SPACE: &str = "\u{2009}";
+// const GRIP_SYMBOL: &str = "⠿";
+const GRIP_SYMBOL: &str = "G";
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -321,6 +328,7 @@ impl DataRow {
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
+    hovered_rule: Option<usize>,
     hints: Vec<Hint>,
 }
 
@@ -342,21 +350,29 @@ impl App {
                 data: Arc::new(Mutex::new(data)),
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
                 rules: vec![
-                    Rule {
-                        condition: Condition::Plain(Comparison {
+                    Rule::new(
+                        Condition::Plain(Comparison {
                             field: Field::Purpose,
                             ctype: ComparisonType::Contains("MINT".to_string()),
                         }),
-                        category: "expenses:4650bewirtungskosten".to_string(),
-                    },
-                    Rule {
-                        condition: Condition::Plain(Comparison {
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
                             field: Field::Purpose,
                             ctype: ComparisonType::Contains("spezifiziert".to_string()),
                         }),
-                        category: "expenses:4650bewirtungskosten".to_string(),
-                    },
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
                 ],
+                hovered_rule: Default::default(),
                 hints: Default::default(),
             }
         }
@@ -473,52 +489,74 @@ impl App {
         let mut hovered_condition: Option<Condition> = None;
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
+            ui.add(Label::new(bold("rules")));
             egui::ScrollArea::both().show(ui, |ui| {
-                ui.add(Label::new(bold("rules")));
-                let frame = Frame::default().inner_margin(4.0);
-                let mut from = None;
-                let mut to = None;
-                let (_, _) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-                    for (i, rule) in self.rules.clone().into_iter().enumerate() {
-                        let response = ui
-                            .dnd_drag_source(egui::Id::new(("draggable_rule", i)), i, |ui| {
-                                rule.ui(ui, &mut hovered_condition);
-                            })
-                            .response;
-                        if response.hovered() {
-                            hovered_rule = Some(rule.clone());
-                        };
-                        // Detect drops onto this item:
-                        if let (Some(pointer), Some(hovered_payload)) = (
-                            ui.input(|i| i.pointer.interact_pos()),
-                            response.dnd_hover_payload::<usize>(),
-                        ) {
-                            let stroke = egui::Stroke::new(1.0, egui::Color32::RED);
-                            let rect = response.rect;
-                            let insert_row_id = if *hovered_payload == i {
-                                // We dragged onto ourselves
-                                ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                                i
-                            } else if pointer.y < rect.center().y {
-                                // Above us
-                                ui.painter().hline(rect.x_range(), rect.top(), stroke);
-                                i
-                            } else {
-                                // Below us
-                                ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                                i + 1
-                            };
-                            from = Some(hovered_payload.clone());
-                            to = Some(insert_row_id);
+                // Store a potential drag&drop release event
+                let mut from_to = None;
+
+                for (i, rule) in self.rules.iter_mut().enumerate() {
+                    let egui::InnerResponse {
+                        inner: rule_response,
+                        response,
+                    } = rule.ui(ui, &mut hovered_condition, i);
+                    if rule_response.hovered() {
+                        hovered_rule = Some(rule.clone());
+                    }
+
+                    // If rule is being dragged we draw a tooltip at the cursor
+                    if rule.dragged {
+                        info!("Dragging");
+                        let tooltip_layer_id =
+                            egui::LayerId::new(egui::Order::Tooltip, format!("rule{}", i).into());
+                        let egui::InnerResponse { inner: _, response } = ui.scope_builder(
+                            egui::UiBuilder::new().layer_id(tooltip_layer_id),
+                            |ui| {
+                                ui.add(Label::new(regular(
+                                    format!("dragging placeholder for rule {i}").as_str(),
+                                )));
+                            },
+                        );
+                        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                            let delta = pointer_pos - response.rect.center();
+                            ui.ctx().transform_layer_shapes(
+                                tooltip_layer_id,
+                                emath::TSTransform::from_translation(delta),
+                            );
                         }
                     }
-                });
-                if let (Some(from), Some(to)) = (from, to) {
-                    ui.add(Label::new(regular(
-                        format!("from {} to {}", from, to).as_str(),
-                    )));
-                    let rule = self.rules.remove(*from);
-                    self.rules.insert(std::cmp::min(to, self.rules.len()), rule);
+
+                    // In case we are dragging over this rule
+                    if let (Some(pointer), Some(hovered_payload)) = (
+                        ui.input(|i| i.pointer.interact_pos()),
+                        response.dnd_hover_payload::<usize>(),
+                    ) {
+                        let rect = response.rect;
+                        let stroke = egui::Stroke::new(1.0, Color32::BLUE);
+                        let i_to_insert_into = if *hovered_payload == i {
+                            // We are dragging onto ourselves and do nothing
+                            i
+                        } else if pointer.y < rect.center().y {
+                            // Dragging above
+                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
+                            i
+                        } else {
+                            // Dragging below
+                            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
+                            i + 1
+                        };
+                        // In case we dropped onto this rule
+                        if let Some(dropped_payload) = response.dnd_release_payload() {
+                            from_to = Some((*dropped_payload, i_to_insert_into));
+                        }
+                    }
+                }
+
+                if let Some((from, to)) = from_to {
+                    info!("From {from} to {to}");
+                    if from != to {
+                        let rule = self.rules.remove(from);
+                        self.rules.insert(to.min(self.rules.len()), rule);
+                    }
                 }
             });
         });
@@ -594,15 +632,46 @@ impl Hint {
 struct Rule {
     condition: Condition,
     category: String,
+    hovered: bool,
+    dragged: bool,
 }
 
 impl Rule {
-    fn ui(&self, ui: &mut Ui, hovered_condition: &mut Option<Condition>) {
-        ui.horizontal(|ui| {
-            ui.add(Label::new(regular("When")));
-            self.condition.ui(ui, hovered_condition);
-            ui.add(Label::new(regular(&self.category)));
+    fn new(condition: Condition, category: String) -> Self {
+        Rule {
+            condition,
+            category,
+            hovered: false,
+            dragged: false,
+        }
+    }
+    fn ui(
+        &mut self,
+        ui: &mut Ui,
+        hovered_condition: &mut Option<Condition>,
+        rule_i: usize,
+    ) -> InnerResponse<Response> {
+        // When being dragged we render the rule in a more subtle color
+        let color = if self.dragged {
+            Color32::GRAY
+        } else {
+            Color32::PLACEHOLDER
+        };
+        let response = ui.horizontal(|ui| {
+            let mut r = ui.add(Label::new(if self.hovered {
+                bold(GRIP_SYMBOL).color(color)
+            } else {
+                regular(GRIP_SYMBOL).color(color)
+            }));
+            r.dnd_set_drag_payload(rule_i);
+            self.dragged = r.dragged();
+            r |= ui.add(Label::new(regular("When").color(color)));
+            r |= self.condition.ui(ui, hovered_condition, color);
+            r |= ui.add(Label::new(regular(&self.category).color(color)));
+            r
         });
+        self.hovered = response.inner.hovered();
+        response
     }
 }
 
@@ -623,26 +692,31 @@ impl Condition {
             Self::Or(c1, c2) => c1.matches(entry) || c2.matches(entry),
         }
     }
-    fn ui(&self, ui: &mut Ui, hovered_condition: &mut Option<Condition>) {
-        match self {
+    fn ui(
+        &self,
+        ui: &mut Ui,
+        hovered_condition: &mut Option<Condition>,
+        color: Color32,
+    ) -> Response {
+        let response = match self {
             Condition::Plain(Comparison {
                 field,
                 ctype: ComparisonType::Contains(value),
             }) => {
-                if ui
-                    .add(Label::new(regular(
-                        format!("{field:?} contains \"{value}\"").as_str(),
-                    )))
-                    .hovered()
-                {
+                let response = ui.add(Label::new(
+                    regular(format!("{field:?} contains \"{value}\"").as_str()).color(color),
+                ));
+                if response.hovered() {
                     *hovered_condition = Some(self.clone());
                     info!("hovering condition {self:?}");
                 }
+                response
             }
             _ => {
                 unimplemented!()
             }
-        }
+        };
+        response
     }
 }
 

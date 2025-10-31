@@ -2046,6 +2046,8 @@ dependencies = [
  "egui 0.33.0",
  "egui_extras 0.31.1",
  "egui_extras 0.33.0",
+ "emath 0.31.1",
+ "emath 0.33.0",
  "env_logger",
  "epaint 0.31.1",
  "epaint 0.33.0",
