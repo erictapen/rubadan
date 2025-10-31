@@ -28,6 +28,7 @@ const THIN_SPACE: &str = "\u{2009}";
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
+
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         "IBM Plex Sans".to_owned(),
@@ -45,6 +46,31 @@ fn load_fonts(ctx: &egui::Context) {
         "IBM Plex Sans ExtraLight".to_owned(),
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-ExtraLight.otf")).into(),
     );
+
+    #[cfg(feature = "egui_latest")]
+    {
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("IBM Plex Sans".into()))
+            .or_default()
+            .push("IBM Plex Sans".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("IBM Plex Sans Bold".into()))
+            .or_default()
+            .push("IBM Plex Sans Bold".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("IBM Plex Sans Bold Italic".into()))
+            .or_default()
+            .push("IBM Plex Sans Bold Italic".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("IBM Plex Sans ExtraLight".into()))
+            .or_default()
+            .push("IBM Plex Sans ExtraLight".to_owned());
+    }
+
     // We don't register default font so that non-explicit font use is noticed.
     ctx.set_fonts(fonts);
 }
