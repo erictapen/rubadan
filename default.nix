@@ -6,6 +6,7 @@
   wasm-bindgen-cli,
   binaryen,
   ibm-plex,
+  noto-fonts,
   publicUrl ? "/",
 }:
 rustPlatform.buildRustPackage {
@@ -34,6 +35,7 @@ rustPlatform.buildRustPackage {
   buildPhase = ''
     mkdir -p assets/fonts
     cp ${ibm-plex}/share/fonts/opentype/* assets/fonts/
+    cp ${noto-fonts}/share/fonts/noto/NotoSansSymbols2-Regular.otf assets/fonts/
     trunk build \
       --offline \
       --frozen \

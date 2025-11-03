@@ -30,8 +30,7 @@ use std::sync::{Arc, Mutex};
 use strum_macros::EnumIter;
 
 const THIN_SPACE: &str = "\u{2009}";
-// const GRIP_SYMBOL: &str = "⠿";
-const GRIP_SYMBOL: &str = "G";
+const GRIP_SYMBOL: &str = "⠿";
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -52,6 +51,13 @@ fn load_fonts(ctx: &egui::Context) {
     fonts.font_data.insert(
         "IBM Plex Sans ExtraLight".to_owned(),
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-ExtraLight.otf")).into(),
+    );
+    fonts.font_data.insert(
+        "Noto Sans Symbols2".to_owned(),
+        FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols2-Regular.otf"
+        ))
+        .into(),
     );
 
     #[cfg(feature = "egui_latest")]
@@ -76,6 +82,11 @@ fn load_fonts(ctx: &egui::Context) {
             .entry(egui::FontFamily::Name("IBM Plex Sans ExtraLight".into()))
             .or_default()
             .push("IBM Plex Sans ExtraLight".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("Noto Sans Symbols2".into()))
+            .or_default()
+            .push("Noto Sans Symbols2".to_owned());
     }
 
     // We don't register default font so that non-explicit font use is noticed.
@@ -95,6 +106,14 @@ fn bold(text: &str) -> RichText {
     let family = FontFamily::Named("IBM Plex Sans Bold".into());
     #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("IBM Plex Sans Bold".into());
+    RichText::new(text).family(family)
+}
+
+fn symbol(text: &str) -> RichText {
+    #[cfg(feature = "egui_parley")]
+    let family = FontFamily::Named("Noto Sans Symbols2".into());
+    #[cfg(feature = "egui_latest")]
+    let family = FontFamily::Name("INoto Sans Symbols2".into());
     RichText::new(text).family(family)
 }
 
@@ -371,6 +390,132 @@ impl App {
                         }),
                         "C".to_string(),
                     ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("MINT".to_string()),
+                        }),
+                        "A".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                        }),
+                        "B".to_string(),
+                    ),
+                    Rule::new(
+                        Condition::Plain(Comparison {
+                            field: Field::Purpose,
+                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                        }),
+                        "C".to_string(),
+                    ),
                 ],
                 hovered_rule: Default::default(),
                 hints: Default::default(),
@@ -490,75 +635,91 @@ impl App {
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             ui.add(Label::new(bold("rules")));
-            egui::ScrollArea::both().show(ui, |ui| {
-                // Store a potential drag&drop release event
-                let mut from_to = None;
+            egui::ScrollArea::both()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    let dragging_pointer: Option<egui::Pos2> = ui
+                        .input(|i| i.pointer.interact_pos())
+                        .filter(|_| egui::DragAndDrop::has_payload_of_type::<usize>(ctx));
+                    let mut last_rule_center = None;
+                    let rules_len = self.rules.len();
+                    let mut drop_to = None;
 
-                for (i, rule) in self.rules.iter_mut().enumerate() {
-                    let egui::InnerResponse {
-                        inner: rule_response,
-                        response,
-                    } = rule.ui(ui, &mut hovered_condition, i);
-                    if rule_response.hovered() {
-                        hovered_rule = Some(rule.clone());
-                    }
+                    for (i, rule) in self.rules.iter_mut().enumerate() {
+                        let egui::InnerResponse {
+                            inner: rule_response,
+                            response,
+                        } = rule.ui(ui, &mut hovered_condition, i);
+                        if rule_response.hovered() {
+                            hovered_rule = Some(rule.clone());
+                        }
 
-                    // If rule is being dragged we draw a tooltip at the cursor
-                    if rule.dragged {
-                        info!("Dragging");
-                        let tooltip_layer_id =
-                            egui::LayerId::new(egui::Order::Tooltip, format!("rule{}", i).into());
-                        let egui::InnerResponse { inner: _, response } = ui.scope_builder(
-                            egui::UiBuilder::new().layer_id(tooltip_layer_id),
-                            |ui| {
-                                ui.add(Label::new(regular(
-                                    format!("dragging placeholder for rule {i}").as_str(),
-                                )));
-                            },
-                        );
-                        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
-                            let delta = pointer_pos - response.rect.center();
-                            ui.ctx().transform_layer_shapes(
-                                tooltip_layer_id,
-                                emath::TSTransform::from_translation(delta),
+                        // In case there is any rule being dragged we preview the drop position
+                        if let Some(pointer) = dragging_pointer {
+                            let stroke = egui::Stroke::new(1.0, Color32::BLUE);
+                            let rect = response.rect;
+                            let current_center = rect.center().y;
+                            // First rule being drawn and the pointer is above it or it's inbetween
+                            // the most recent one and this one
+                            if last_rule_center.unwrap_or(0.0) <= pointer.y
+                                && pointer.y < current_center
+                            {
+                                if let Some(last_rule_center) = last_rule_center {
+                                    ui.painter().hline(
+                                        rect.x_range(),
+                                        egui::Rangef::new(last_rule_center, rect.center().y)
+                                            .center(),
+                                        stroke,
+                                    );
+                                } else {
+                                    ui.painter().hline(rect.x_range(), rect.top(), stroke);
+                                }
+                                drop_to = Some(i);
+                            }
+                            // pointer is after the last rule
+                            else if rules_len - 1 == i && current_center < pointer.y {
+                                ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
+                                drop_to = Some(i);
+                            }
+                        }
+
+                        last_rule_center = Some(response.rect.center().y);
+
+                        // If the rule itself is being dragged we draw a tooltip at the cursor
+                        // FIXME for some reason this adds a newline like gap after the rule
+                        if rule.dragged {
+                            let tooltip_layer_id = egui::LayerId::new(
+                                egui::Order::Tooltip,
+                                format!("rule{}", i).into(),
                             );
+                            let egui::InnerResponse { inner: _, response } = ui.scope_builder(
+                                egui::UiBuilder::new().layer_id(tooltip_layer_id),
+                                |ui| {
+                                    ui.add(Label::new(regular(
+                                        format!("dragging placeholder for rule {i}").as_str(),
+                                    )));
+                                },
+                            );
+                            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                                let delta = pointer_pos - response.rect.center();
+                                ui.ctx().transform_layer_shapes(
+                                    tooltip_layer_id,
+                                    emath::TSTransform::from_translation(delta),
+                                );
+                            }
                         }
                     }
 
-                    // In case we are dragging over this rule
-                    if let (Some(pointer), Some(hovered_payload)) = (
-                        ui.input(|i| i.pointer.interact_pos()),
-                        response.dnd_hover_payload::<usize>(),
+                    // In case a rule was dropped this frame
+                    if let (true, Some(from), Some(to)) = (
+                        ctx.input(|i| i.pointer.any_released()),
+                        egui::DragAndDrop::payload::<usize>(ctx),
+                        drop_to,
                     ) {
-                        let rect = response.rect;
-                        let stroke = egui::Stroke::new(1.0, Color32::BLUE);
-                        let i_to_insert_into = if *hovered_payload == i {
-                            // We are dragging onto ourselves and do nothing
-                            i
-                        } else if pointer.y < rect.center().y {
-                            // Dragging above
-                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
-                            i
-                        } else {
-                            // Dragging below
-                            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                            i + 1
-                        };
-                        // In case we dropped onto this rule
-                        if let Some(dropped_payload) = response.dnd_release_payload() {
-                            from_to = Some((*dropped_payload, i_to_insert_into));
-                        }
-                    }
-                }
-
-                if let Some((from, to)) = from_to {
-                    info!("From {from} to {to}");
-                    if from != to {
-                        let rule = self.rules.remove(from);
+                        let rule = self.rules.remove(*from);
                         self.rules.insert(to.min(self.rules.len()), rule);
                     }
-                }
-            });
+                });
         });
         if response.response.hovered() {
             self.hints.push(Hint::Rules);
@@ -598,8 +759,20 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.hints.clear();
 
+        // We turn off text selection globally in case the user is dragging
+        // something
+        if egui::DragAndDrop::has_any_payload(ctx) {
+            ctx.style_mut(|style| {
+                style.interaction.selectable_labels = false;
+            });
+        } else {
+            ctx.style_mut(|style| {
+                style.interaction.selectable_labels = true;
+            });
+        }
+
         #[cfg(debug_assertions)]
-        ctx.set_debug_on_hover(true);
+        // ctx.set_debug_on_hover(true);
         self.data_panel(ctx);
         self.rules_panel(ctx);
         self.bottom_bar(ctx);
@@ -659,9 +832,9 @@ impl Rule {
         };
         let response = ui.horizontal(|ui| {
             let mut r = ui.add(Label::new(if self.hovered {
-                bold(GRIP_SYMBOL).color(color)
+                symbol(GRIP_SYMBOL).color(Color32::DARK_GRAY)
             } else {
-                regular(GRIP_SYMBOL).color(color)
+                symbol(GRIP_SYMBOL).color(Color32::TRANSPARENT)
             }));
             r.dnd_set_drag_payload(rule_i);
             self.dragged = r.dragged();
@@ -708,7 +881,6 @@ impl Condition {
                 ));
                 if response.hovered() {
                     *hovered_condition = Some(self.clone());
-                    info!("hovering condition {self:?}");
                 }
                 response
             }
