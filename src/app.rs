@@ -848,8 +848,6 @@ impl eframe::App for App {
             });
         }
 
-        #[cfg(debug_assertions)]
-        // ctx.set_debug_on_hover(true);
         self.data_panel(ctx);
         self.rules_panel(ctx);
         self.bottom_bar(ctx);
