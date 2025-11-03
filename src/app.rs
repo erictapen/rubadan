@@ -6,6 +6,8 @@ use egui_extras_parley as egui_extras;
 use egui_parley as egui;
 #[cfg(feature = "egui_parley")]
 use emath_parley as emath;
+#[cfg(feature = "egui_parley")]
+use epaint_parley as epaint;
 
 #[cfg(feature = "egui_latest")]
 use eframe_latest as eframe;
@@ -15,6 +17,8 @@ use egui_extras_latest as egui_extras;
 use egui_latest as egui;
 #[cfg(feature = "egui_latest")]
 use emath_latest as emath;
+#[cfg(feature = "egui_latest")]
+use epaint_latest as epaint;
 
 use crate::execute;
 #[cfg(feature = "egui_latest")]
@@ -113,7 +117,7 @@ fn symbol(text: &str) -> RichText {
     #[cfg(feature = "egui_parley")]
     let family = FontFamily::Named("Noto Sans Symbols2".into());
     #[cfg(feature = "egui_latest")]
-    let family = FontFamily::Name("INoto Sans Symbols2".into());
+    let family = FontFamily::Name("Noto Sans Symbols2".into());
     RichText::new(text).family(family)
 }
 
@@ -139,7 +143,7 @@ struct Money {
 }
 
 impl Renderable for Money {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
         let currency_sign = match self.iso_currency_code.as_str() {
             "EUR" => "€",
             c => {
@@ -152,15 +156,16 @@ impl Renderable for Money {
             false => "",
         };
         let number = self.amount;
-        ui.label(
+        let response = ui.label(
             regular(format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str())
                 .background_color(style.color()),
         );
+        minimap.push(response.rect, style);
     }
 }
 
 /// Distinction for how hovering over one element should highlight others
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq)]
 enum SelectStyle {
     /// The element is not affected at all
     #[default]
@@ -186,6 +191,15 @@ impl SelectStyle {
             Self::Suggestion => Color32::YELLOW,
         }
     }
+    fn color_minimap(&self) -> egui::Color32 {
+        use egui::Color32;
+        if self == &Self::Unaffected {
+            // We want unaffected text to still be visible in the minimap
+            Color32::GRAY
+        } else {
+            self.color()
+        }
+    }
 }
 
 /// Wrapper type so we can annotate wether a cell is highlighted
@@ -204,27 +218,30 @@ impl<T: Renderable> Highlightable<T> {
     fn into_inner(self) -> T {
         self.inner
     }
-    fn ui(&self, ui: &mut Ui) {
-        self.inner.ui(ui, self.style);
+    fn ui(&self, ui: &mut Ui, minimap: &mut Minimap) {
+        self.inner.ui(ui, self.style, minimap);
     }
 }
 
 trait Renderable {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle);
+    /// Draw something and insert the resulting RectShape into the minimap
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap);
 }
 
 impl Renderable for String {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
-        ui.add(Label::new(regular(self).background_color(style.color())).extend());
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+        let response = ui.add(Label::new(regular(self).background_color(style.color())).extend());
+        minimap.push(response.rect, style);
     }
 }
 
 impl Renderable for chrono::NaiveDate {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
-        ui.add(
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+        let response = ui.add(
             Label::new(regular(format!("{}", self).as_str()).background_color(style.color()))
                 .extend(),
         );
+        minimap.push(response.rect, style);
     }
 }
 
@@ -232,9 +249,10 @@ impl Renderable for chrono::NaiveDate {
 struct RawIban(String);
 
 impl Renderable for RawIban {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+        let response;
         if let Ok(iban) = self.0.parse::<iban::Iban>() {
-            ui.add(
+            response = ui.add(
                 Label::new(
                     regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())
                         .background_color(style.color()),
@@ -242,7 +260,7 @@ impl Renderable for RawIban {
                 .extend(),
             );
         } else {
-            ui.add(
+            response = ui.add(
                 Label::new(
                     regular(format!("{}{THIN_SPACE}❌", self.0).as_str())
                         .background_color(style.color()),
@@ -250,6 +268,7 @@ impl Renderable for RawIban {
                 .extend(),
             );
         }
+        minimap.push(response.rect, style);
     }
 }
 
@@ -343,12 +362,39 @@ impl DataRow {
     }
 }
 
+/// All the information that we need to paint the minimap. Needs to be persisted as we draw the
+/// rest of the data panel before the minimap
+#[derive(Default)]
+struct Minimap {
+    /// The entire space
+    frame: Option<egui::Rect>,
+    elements: Vec<epaint::RectShape>,
+    /// The portion that is visible when scrolling
+    visible_rect: Option<egui::Rect>,
+}
+
+impl Minimap {
+    fn push(&mut self, rect: egui::Rect, style: SelectStyle) {
+        self.elements.push(epaint::RectShape::filled(
+            rect,
+            epaint::CornerRadius::ZERO,
+            style.color_minimap(),
+        ));
+    }
+    fn clear(&mut self) {
+        self.frame = None;
+        self.elements.clear();
+        self.visible_rect = None;
+    }
+}
+
 #[derive(Default)]
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
     hovered_rule: Option<usize>,
     hints: Vec<Hint>,
+    minimap: Minimap,
 }
 
 impl App {
@@ -519,6 +565,7 @@ impl App {
                 ],
                 hovered_rule: Default::default(),
                 hints: Default::default(),
+                minimap: Default::default(),
             }
         }
         #[cfg(not(feature = "demo"))]
@@ -548,84 +595,116 @@ impl App {
             });
         }
     }
+    fn minimap(&mut self, ui: &mut Ui) {
+        egui::SidePanel::right("minimap")
+            .resizable(false)
+            .exact_width(250.0)
+            .frame(egui::Frame::NONE.fill(egui::Color32::WHITE))
+            .show_inside(ui, |ui| {
+                if let Some(from) = self.minimap.frame {
+                    let to = ui.max_rect();
+                    let transform = emath::RectTransform::from_to(from, to);
+
+                    if let Some(mut visible_rect) = self.minimap.visible_rect {
+                        visible_rect = transform.transform_rect(visible_rect);
+                        ui.painter().add(epaint::RectShape::filled(
+                            visible_rect,
+                            epaint::CornerRadius::same(5),
+                            Color32::LIGHT_GRAY,
+                        ));
+                    }
+
+                    for mut rect_shape in self.minimap.elements.drain(..) {
+                        rect_shape.rect = transform.transform_rect(rect_shape.rect);
+                        ui.painter().add(rect_shape);
+                    }
+                }
+            });
+        // Clear state so that we can write down elements again
+        self.minimap.clear();
+    }
     fn data_panel(&mut self, ctx: &egui::Context) {
-        let response = egui::TopBottomPanel::top("data_panel")
+        let table_response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y * 0.5)
             .show(ctx, |ui| {
-                egui::ScrollArea::both()
-                    .min_scrolled_height(TRANSACTIONS_HEIGHT_MIN)
-                    .show(ui, |ui| {
-                        self.file_load_button(ctx, ui);
+                self.minimap(ui);
+                let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
+                    self.file_load_button(ctx, ui);
 
-                        use egui_extras::{Column, TableBuilder};
-                        TableBuilder::new(ui)
-                            .auto_shrink([false, false])
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .header(20.0, |mut header| {
-                                header.col(|ui| {
-                                    ui.label(bold("date"));
-                                });
-                                header.col(|ui| {
-                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                        ui.label(bold("amount"));
-                                    });
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("IBAN"));
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("name"));
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("purpose"));
-                                });
-                            })
-                            .body(|mut body| {
-                                for entry in &*self.data.lock().unwrap() {
-                                    body.row(0.0, |mut row| {
-                                        // date
-                                        row.col(|ui| {
-                                            entry.date.ui(ui);
-                                        });
-                                        // amount
-                                        row.col(|ui| {
-                                            ui.with_layout(
-                                                Layout::right_to_left(Align::Min),
-                                                |ui| {
-                                                    entry.money.ui(ui);
-                                                },
-                                            );
-                                        });
-                                        // iban
-                                        row.col(|ui| {
-                                            if let Some(ibanh) = &entry.iban {
-                                                ibanh.ui(ui);
-                                            }
-                                        });
-                                        // name
-                                        row.col(|ui| {
-                                            if let Some(nameh) = &entry.name {
-                                                nameh.ui(ui);
-                                            }
-                                        });
-                                        // purpose
-                                        row.col(|ui| {
-                                            if let Some(purposeh) = &entry.purpose {
-                                                purposeh.ui(ui);
-                                            }
-                                        });
-                                    });
-                                }
+                    use egui_extras::{Column, TableBuilder};
+                    let table_state = TableBuilder::new(ui)
+                        .auto_shrink([false, false])
+                        .column(Column::auto())
+                        .column(Column::auto())
+                        .column(Column::auto())
+                        .column(Column::auto())
+                        .column(Column::auto())
+                        .header(20.0, |mut header| {
+                            header.col(|ui| {
+                                ui.label(bold("date"));
                             });
-                    });
+                            header.col(|ui| {
+                                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                    ui.label(bold("amount"));
+                                });
+                            });
+                            header.col(|ui| {
+                                ui.label(bold("IBAN"));
+                            });
+                            header.col(|ui| {
+                                ui.label(bold("name"));
+                            });
+                            header.col(|ui| {
+                                ui.label(bold("purpose"));
+                            });
+                        })
+                        .body(|mut body| {
+                            for entry in &*self.data.lock().unwrap() {
+                                body.row(0.0, |mut row| {
+                                    // date
+                                    row.col(|ui| {
+                                        entry.date.ui(ui, &mut self.minimap);
+                                    });
+                                    // amount
+                                    row.col(|ui| {
+                                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                            entry.money.ui(ui, &mut self.minimap);
+                                        });
+                                    });
+                                    // iban
+                                    row.col(|ui| {
+                                        if let Some(ibanh) = &entry.iban {
+                                            ibanh.ui(ui, &mut self.minimap);
+                                        }
+                                    });
+                                    // name
+                                    row.col(|ui| {
+                                        if let Some(nameh) = &entry.name {
+                                            nameh.ui(ui, &mut self.minimap);
+                                        }
+                                    });
+                                    // purpose
+                                    row.col(|ui| {
+                                        if let Some(purposeh) = &entry.purpose {
+                                            purposeh.ui(ui, &mut self.minimap);
+                                        }
+                                    });
+                                });
+                            }
+                            self.minimap.frame = Some(body.ui_mut().min_rect());
+                        });
+
+                    // For visualising which part of the minimap is visible in the data panel,
+                    // we add another shape to signify scroll state
+                    self.minimap.visible_rect = Some(table_state.inner_rect);
+                });
+                if let Some(ref mut visible_rect) = self.minimap.visible_rect {
+                    *visible_rect = visible_rect.intersect(horizontal_state.inner_rect);
+                }
             });
-        if response.response.hovered() {
+        if table_response.response.hovered() {
             self.hints.push(Hint::Transactions);
         }
     }
@@ -871,7 +950,7 @@ impl Condition {
         hovered_condition: &mut Option<Condition>,
         color: Color32,
     ) -> Response {
-        let response = match self {
+        match self {
             Condition::Plain(Comparison {
                 field,
                 ctype: ComparisonType::Contains(value),
@@ -887,8 +966,7 @@ impl Condition {
             _ => {
                 unimplemented!()
             }
-        };
-        response
+        }
     }
 }
 
