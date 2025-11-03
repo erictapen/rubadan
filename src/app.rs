@@ -392,7 +392,6 @@ impl Minimap {
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
-    hovered_rule: Option<usize>,
     hints: Vec<Hint>,
     minimap: Minimap,
 }
@@ -563,7 +562,6 @@ impl App {
                         "C".to_string(),
                     ),
                 ],
-                hovered_rule: Default::default(),
                 hints: Default::default(),
                 minimap: Default::default(),
             }
