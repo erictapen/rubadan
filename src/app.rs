@@ -593,31 +593,38 @@ impl App {
             });
         }
     }
-    fn minimap(&mut self, ui: &mut Ui) {
-        egui::SidePanel::right("minimap")
-            .resizable(false)
-            .exact_width(250.0)
-            .frame(egui::Frame::NONE.fill(egui::Color32::WHITE))
-            .show_inside(ui, |ui| {
-                if let Some(from) = self.minimap.frame {
-                    let to = ui.max_rect();
-                    let transform = emath::RectTransform::from_to(from, to);
-
-                    if let Some(mut visible_rect) = self.minimap.visible_rect {
+    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+        if ctx.input(|i| i.screen_rect().width()) > 600.0 {
+            egui::SidePanel::right("minimap")
+                .resizable(false)
+                .exact_width(200.0)
+                .frame(egui::Frame::NONE.fill(egui::Color32::WHITE))
+                .show_inside(ui, |ui| {
+                    if let (Some(from), Some(mut visible_rect)) =
+                        (self.minimap.frame, self.minimap.visible_rect)
+                    {
+                        let mut to = ui.max_rect();
+                        to.set_height(to.width() * from.aspect_ratio());
+                        let transform = emath::RectTransform::from_to(from, to);
                         visible_rect = transform.transform_rect(visible_rect);
+                        // We try to keep the visible_rect inside the minimap
+                        let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
+
+                        for mut rect_shape in self.minimap.elements.drain(..) {
+                            rect_shape.rect = transform.transform_rect(rect_shape.rect);
+                            rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
+                            ui.painter().add(rect_shape);
+                        }
+
+                        visible_rect = visible_rect.translate([0.0, -y_offset].into());
                         ui.painter().add(epaint::RectShape::filled(
                             visible_rect,
                             epaint::CornerRadius::same(5),
-                            Color32::LIGHT_GRAY,
+                            Color32::LIGHT_GRAY.linear_multiply(0.5),
                         ));
                     }
-
-                    for mut rect_shape in self.minimap.elements.drain(..) {
-                        rect_shape.rect = transform.transform_rect(rect_shape.rect);
-                        ui.painter().add(rect_shape);
-                    }
-                }
-            });
+                });
+        }
         // Clear state so that we can write down elements again
         self.minimap.clear();
     }
@@ -627,7 +634,8 @@ impl App {
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y * 0.5)
             .show(ctx, |ui| {
-                self.minimap(ui);
+                self.minimap(ctx, ui);
+
                 let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
                     self.file_load_button(ctx, ui);
 
