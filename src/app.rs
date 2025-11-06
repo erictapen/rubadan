@@ -215,9 +215,6 @@ impl<T: Renderable> Highlightable<T> {
             style: Default::default(),
         }
     }
-    fn into_inner(self) -> T {
-        self.inner
-    }
     fn ui(&self, ui: &mut Ui, minimap: &mut Minimap) {
         self.inner.ui(ui, self.style, minimap);
     }
@@ -278,7 +275,7 @@ struct DataRow {
     iban: Option<Highlightable<RawIban>>,
     name: Option<Highlightable<String>>,
     purpose: Option<Highlightable<String>>,
-    annotation: Option<String>,
+    annotation: Option<Highlightable<String>>,
 }
 
 impl DataRow {
@@ -404,7 +401,7 @@ impl App {
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
-        {
+        let mut result = {
             let data = parse_mt940_file(
                 // This example file is from
                 // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
@@ -565,11 +562,11 @@ impl App {
                 hints: Default::default(),
                 minimap: Default::default(),
             }
-        }
+        };
         #[cfg(not(feature = "demo"))]
-        {
-            Default::default()
-        }
+        let mut result = { Default::default() };
+        result.update_annotations();
+        result
     }
     fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         if self.data.lock().unwrap().is_empty() && ui.button(bold("Pick MT940 file")).clicked() {
@@ -591,6 +588,15 @@ impl App {
                     ctx_clone.request_repaint();
                 }
             });
+        }
+    }
+    fn update_annotations(&mut self) {
+        for entry in &mut *self.data.lock().unwrap() {
+            for rule in &self.rules {
+                if rule.condition.matches(entry) {
+                    entry.annotation = Some(Highlightable::new(rule.category.clone()));
+                }
+            }
         }
     }
     fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui) {
@@ -647,6 +653,7 @@ impl App {
                         .column(Column::auto())
                         .column(Column::auto())
                         .column(Column::auto())
+                        .column(Column::auto())
                         .header(20.0, |mut header| {
                             header.col(|ui| {
                                 ui.label(bold("date"));
@@ -664,6 +671,9 @@ impl App {
                             });
                             header.col(|ui| {
                                 ui.label(bold("purpose"));
+                            });
+                            header.col(|ui| {
+                                ui.label(bold("annotation"));
                             });
                         })
                         .body(|mut body| {
@@ -695,6 +705,12 @@ impl App {
                                     row.col(|ui| {
                                         if let Some(purposeh) = &entry.purpose {
                                             purposeh.ui(ui, &mut self.minimap);
+                                        }
+                                    });
+                                    // annotation
+                                    row.col(|ui| {
+                                        if let Some(annotationh) = &entry.annotation {
+                                            annotationh.ui(ui, &mut self.minimap);
                                         }
                                     });
                                 });
