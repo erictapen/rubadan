@@ -26,7 +26,10 @@ use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 
-use egui::{Align, Color32, InnerResponse, Label, Layout, Response, RichText, Ui};
+use egui::{
+    Align, Color32, Frame, InnerResponse, Label, Layout, Margin, Rect, Response, RichText, Ui,
+    UiBuilder,
+};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -564,31 +567,56 @@ impl App {
             }
         };
         #[cfg(not(feature = "demo"))]
-        let mut result = { Default::default() };
+        let mut result: App = { Default::default() };
         result.update_annotations();
         result
     }
     fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
-        if self.data.lock().unwrap().is_empty() && ui.button(bold("Pick MT940 file")).clicked() {
-            let task = rfd::AsyncFileDialog::new().pick_file();
-            let data_clone = Arc::clone(&self.data);
-            let ctx_clone = ctx.clone();
-            execute(async move {
-                let file = task.await;
-                if let Some(file) = file {
-                    let file_content = file.read().await;
-                    info!("File loaded");
-                    let parsed = parse_mt940_file(&file_content);
-                    info!("Parsed {} MT940 rows", parsed.len());
+        let widget = |ui: &mut Ui| {
+            Frame::NONE
+                .stroke(egui::Stroke::new(1.0, Color32::BLUE))
+                .inner_margin(Margin::same(120))
+                .show(ui, |ui| {
+                    let button_response = ui.button(bold("Pick MT940 file"));
+                    if button_response.clicked() {
+                        let task = rfd::AsyncFileDialog::new().pick_file();
+                        let data_clone = Arc::clone(&self.data);
+                        let ctx_clone = ctx.clone();
+                        execute(async move {
+                            let file = task.await;
+                            if let Some(file) = file {
+                                let file_content = file.read().await;
+                                info!("File loaded");
+                                let parsed = parse_mt940_file(&file_content);
+                                info!("Parsed {} MT940 rows", parsed.len());
 
-                    let mut data = data_clone.lock().unwrap();
-                    *data = parsed;
-                    // Redraw so the user can see the result of file load even when window
-                    // isn't active.
-                    ctx_clone.request_repaint();
-                }
-            });
-        }
+                                let mut data = data_clone.lock().unwrap();
+                                *data = parsed;
+                                // Redraw so the user can see the result of file load even when window
+                                // isn't active.
+                                ctx_clone.request_repaint();
+                            }
+                        });
+                    }
+                });
+        };
+        let widget_size = ui
+            .scope_builder(UiBuilder::new().invisible(), widget)
+            .response
+            .rect
+            .size();
+        let available_size = ui.max_rect().size();
+        ui.allocate_ui_at_rect(
+            Rect::from_min_size(
+                [
+                    available_size.x / 2.0 - widget_size.x / 2.0,
+                    available_size.y / 2.0 - widget_size.y / 2.0,
+                ]
+                .into(),
+                widget_size,
+            ),
+            widget,
+        );
     }
     fn update_annotations(&mut self) {
         for entry in &mut *self.data.lock().unwrap() {
@@ -638,92 +666,98 @@ impl App {
         let table_response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
+            .exact_height(ctx.screen_rect().max.y * 0.5)
             .default_height(ctx.screen_rect().max.y * 0.5)
             .show(ctx, |ui| {
-                self.minimap(ctx, ui);
-
-                let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
+                if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
+                } else {
+                    self.minimap(ctx, ui);
 
-                    use egui_extras::{Column, TableBuilder};
-                    let table_state = TableBuilder::new(ui)
-                        .auto_shrink([false, false])
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .header(20.0, |mut header| {
-                            header.col(|ui| {
-                                ui.label(bold("date"));
-                            });
-                            header.col(|ui| {
-                                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                    ui.label(bold("amount"));
+                    let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
+                        use egui_extras::{Column, TableBuilder};
+                        let table_state = TableBuilder::new(ui)
+                            .auto_shrink([false, false])
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .column(Column::auto())
+                            .header(20.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.label(bold("date"));
                                 });
-                            });
-                            header.col(|ui| {
-                                ui.label(bold("IBAN"));
-                            });
-                            header.col(|ui| {
-                                ui.label(bold("name"));
-                            });
-                            header.col(|ui| {
-                                ui.label(bold("purpose"));
-                            });
-                            header.col(|ui| {
-                                ui.label(bold("annotation"));
-                            });
-                        })
-                        .body(|mut body| {
-                            for entry in &*self.data.lock().unwrap() {
-                                body.row(0.0, |mut row| {
-                                    // date
-                                    row.col(|ui| {
-                                        entry.date.ui(ui, &mut self.minimap);
+                                header.col(|ui| {
+                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                        ui.label(bold("amount"));
                                     });
-                                    // amount
-                                    row.col(|ui| {
-                                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                            entry.money.ui(ui, &mut self.minimap);
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("IBAN"));
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("name"));
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("purpose"));
+                                });
+                                header.col(|ui| {
+                                    ui.label(bold("annotation"));
+                                });
+                            })
+                            .body(|mut body| {
+                                for entry in &*self.data.lock().unwrap() {
+                                    body.row(0.0, |mut row| {
+                                        // date
+                                        row.col(|ui| {
+                                            entry.date.ui(ui, &mut self.minimap);
+                                        });
+                                        // amount
+                                        row.col(|ui| {
+                                            ui.with_layout(
+                                                Layout::right_to_left(Align::Min),
+                                                |ui| {
+                                                    entry.money.ui(ui, &mut self.minimap);
+                                                },
+                                            );
+                                        });
+                                        // iban
+                                        row.col(|ui| {
+                                            if let Some(ibanh) = &entry.iban {
+                                                ibanh.ui(ui, &mut self.minimap);
+                                            }
+                                        });
+                                        // name
+                                        row.col(|ui| {
+                                            if let Some(nameh) = &entry.name {
+                                                nameh.ui(ui, &mut self.minimap);
+                                            }
+                                        });
+                                        // purpose
+                                        row.col(|ui| {
+                                            if let Some(purposeh) = &entry.purpose {
+                                                purposeh.ui(ui, &mut self.minimap);
+                                            }
+                                        });
+                                        // annotation
+                                        row.col(|ui| {
+                                            if let Some(annotationh) = &entry.annotation {
+                                                annotationh.ui(ui, &mut self.minimap);
+                                            }
                                         });
                                     });
-                                    // iban
-                                    row.col(|ui| {
-                                        if let Some(ibanh) = &entry.iban {
-                                            ibanh.ui(ui, &mut self.minimap);
-                                        }
-                                    });
-                                    // name
-                                    row.col(|ui| {
-                                        if let Some(nameh) = &entry.name {
-                                            nameh.ui(ui, &mut self.minimap);
-                                        }
-                                    });
-                                    // purpose
-                                    row.col(|ui| {
-                                        if let Some(purposeh) = &entry.purpose {
-                                            purposeh.ui(ui, &mut self.minimap);
-                                        }
-                                    });
-                                    // annotation
-                                    row.col(|ui| {
-                                        if let Some(annotationh) = &entry.annotation {
-                                            annotationh.ui(ui, &mut self.minimap);
-                                        }
-                                    });
-                                });
-                            }
-                            self.minimap.frame = Some(body.ui_mut().min_rect());
-                        });
+                                }
+                                self.minimap.frame = Some(body.ui_mut().min_rect());
+                            });
 
-                    // For visualising which part of the minimap is visible in the data panel,
-                    // we add another shape to signify scroll state
-                    self.minimap.visible_rect = Some(table_state.inner_rect);
-                });
-                if let Some(ref mut visible_rect) = self.minimap.visible_rect {
-                    *visible_rect = visible_rect.intersect(horizontal_state.inner_rect);
+                        // For visualising which part of the minimap is visible in the data panel,
+                        // we add another shape to signify scroll state
+                        self.minimap.visible_rect = Some(table_state.inner_rect);
+                    });
+                    if let Some(ref mut visible_rect) = self.minimap.visible_rect {
+                        *visible_rect = visible_rect.intersect(horizontal_state.inner_rect);
+                    }
                 }
             });
         if table_response.response.hovered() {
