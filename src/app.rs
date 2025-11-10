@@ -36,6 +36,8 @@ use std::sync::{Arc, Mutex};
 
 use strum_macros::EnumIter;
 
+use crate::widgets;
+
 const THIN_SPACE: &str = "\u{2009}";
 const GRIP_SYMBOL: &str = "⠿";
 
@@ -330,8 +332,15 @@ impl DataRow {
         }
     }
 
+    /// # Arguments
+    /// * `rule` - The rule that is being hovered
+    /// * `condition` - In case we just hover over a condition inside the a Rule
     fn highlight(&mut self, rule: &Option<Rule>, condition: &Option<Condition>) {
-        if rule.as_ref().is_some_and(|r| r.condition.matches(self)) {
+        if rule.as_ref().is_some_and(|r|
+            // We highlight even when the rule is disabled, since we still give the user feedback for
+            // what would happen if they'd enable it
+            r.condition.matches(self))
+        {
             self.set_style_to_every_field(SelectStyle::Related2);
         } else if condition.as_ref().is_some_and(|c| c.matches(self)) {
             if let Some(Condition::Plain(comp)) = condition {
@@ -620,8 +629,9 @@ impl App {
     }
     fn update_annotations(&mut self) {
         for entry in &mut *self.data.lock().unwrap() {
+            entry.annotation = None;
             for rule in &self.rules {
-                if rule.condition.matches(entry) {
+                if rule.matches(entry) {
                     entry.annotation = Some(Highlightable::new(rule.category.clone()));
                 }
             }
@@ -765,6 +775,8 @@ impl App {
         }
     }
     fn rules_panel(&mut self, ctx: &egui::Context) {
+        let mut any_rule_changed = false;
+
         let mut hovered_rule: Option<Rule> = None;
         let mut hovered_condition: Option<Condition> = None;
 
@@ -781,10 +793,12 @@ impl App {
                     let mut drop_to = None;
 
                     for (i, rule) in self.rules.iter_mut().enumerate() {
+                        let old_enabled = rule.enabled;
                         let egui::InnerResponse {
                             inner: rule_response,
                             response,
                         } = rule.ui(ui, &mut hovered_condition, i);
+                        any_rule_changed |= old_enabled != rule.enabled;
                         if rule_response.hovered() {
                             hovered_rule = Some(rule.clone());
                         }
@@ -845,7 +859,7 @@ impl App {
                         }
                     }
 
-                    // In case a rule was dropped this frame
+                    // In case a rule was dragdropped this frame
                     if let (true, Some(from), Some(to)) = (
                         ctx.input(|i| i.pointer.any_released()),
                         egui::DragAndDrop::payload::<usize>(ctx),
@@ -863,6 +877,11 @@ impl App {
         // might be inefficient?
         for entry in &mut *self.data.lock().unwrap() {
             entry.highlight(&hovered_rule, &hovered_condition);
+        }
+
+        if any_rule_changed {
+            info!("At least one rule changed this frame");
+            self.update_annotations();
         }
     }
     fn bottom_bar(&mut self, ctx: &egui::Context) {
@@ -936,6 +955,7 @@ impl Hint {
 /// When purpose contains "Cafe" then it is "expenses:4650bewirtungskosten"
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Rule {
+    enabled: bool,
     condition: Condition,
     category: String,
     hovered: bool,
@@ -945,6 +965,7 @@ struct Rule {
 impl Rule {
     fn new(condition: Condition, category: String) -> Self {
         Rule {
+            enabled: true,
             condition,
             category,
             hovered: false,
@@ -958,10 +979,9 @@ impl Rule {
         rule_i: usize,
     ) -> InnerResponse<Response> {
         // When being dragged we render the rule in a more subtle color
-        let color = if self.dragged {
-            Color32::GRAY
-        } else {
-            Color32::PLACEHOLDER
+        let color = match (self.enabled, self.dragged) {
+            (false, _) | (_, true) => Color32::GRAY,
+            (_, false) => Color32::PLACEHOLDER,
         };
         let response = ui.horizontal(|ui| {
             let mut r = ui.add(Label::new(if self.hovered {
@@ -971,13 +991,25 @@ impl Rule {
             }));
             r.dnd_set_drag_payload(rule_i);
             self.dragged = r.dragged();
-            r |= ui.add(Label::new(regular("When").color(color)));
-            r |= self.condition.ui(ui, hovered_condition, color);
-            r |= ui.add(Label::new(regular(&self.category).color(color)));
+            r |= ui.add(widgets::toggle_switch::toggle(&mut self.enabled));
+            let mut rule_text = ui.add(Label::new(regular("When").color(color)));
+            rule_text |= self.condition.ui(ui, hovered_condition, color);
+            rule_text |= ui.add(Label::new(regular(&self.category).color(color)));
+            if !self.enabled {
+                ui.painter().hline(
+                    rule_text.rect.x_range(),
+                    rule_text.rect.center().y,
+                    egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+                );
+            }
+            r |= rule_text;
             r
         });
         self.hovered = response.inner.hovered();
         response
+    }
+    fn matches(&self, entry: &DataRow) -> bool {
+        self.enabled && self.condition.matches(entry)
     }
 }
 

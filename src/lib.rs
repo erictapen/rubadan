@@ -1,6 +1,8 @@
 mod app;
 pub use app::App;
 
+mod widgets;
+
 #[cfg(not(target_arch = "wasm32"))]
 fn execute<F: Future<Output = ()> + Send + 'static>(f: F) {
     std::thread::spawn(move || futures::executor::block_on(f));
