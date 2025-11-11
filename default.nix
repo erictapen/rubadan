@@ -5,6 +5,7 @@
   rustc,
   wasm-bindgen-cli,
   binaryen,
+  brotli,
   ibm-plex,
   noto-fonts,
   publicUrl ? "/",
@@ -30,6 +31,7 @@ rustPlatform.buildRustPackage {
     rustc.llvmPackages.lld
     wasm-bindgen-cli
     binaryen
+    brotli
   ];
 
   buildPhase = ''
@@ -42,6 +44,10 @@ rustPlatform.buildRustPackage {
       --release \
       --dist $out
   '';
-  installPhase = "echo 'Skipping installPhase'";
+  installPhase = ''
+    find $out -type f \
+      -exec gzip --best --keep --force {} ';' \
+      -exec brotli --best --keep --force {} ';' \
+  '';
   checkPhase = "echo 'Skipping installPhase'";
 }
