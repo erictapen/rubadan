@@ -410,6 +410,9 @@ impl App {
         info!("Initializing app");
         load_fonts(&cc.egui_ctx);
 
+        // Force lightmode theme for now until we have darkmode colors
+        cc.egui_ctx.set_theme(egui::Theme::Light);
+
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         let mut result = {
