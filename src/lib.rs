@@ -1,6 +1,7 @@
 mod app;
 pub use app::App;
 
+mod utils;
 mod widgets;
 
 #[cfg(not(target_arch = "wasm32"))]

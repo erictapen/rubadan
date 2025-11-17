@@ -28,8 +28,9 @@ use egui::text::style::FontFamily;
 
 use egui::{
     Align, Button, Color32, Frame, InnerResponse, Label, Layout, Margin, Rect, Response, RichText,
-    Ui, UiBuilder,
+    StrokeKind, Ui, UiBuilder,
 };
+use epaint::{CornerRadius, RectShape};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -132,13 +133,17 @@ fn parse_mt940_file(bytes: &[u8]) -> Vec<DataRow> {
         warn!("Warning! Had to replace an occurence of an impossible date.",);
     }
 
-    mt940::parse_mt940(&mt940::sanitizers::sanitize(
+    let result: Vec<DataRow> = mt940::parse_mt940(&mt940::sanitizers::sanitize(
         &file_str.replace(":61:220229", ":61:220301"),
     ))
     .unwrap_or_else(|e| panic!("{}", e))
     .into_iter()
     .flat_map(DataRow::from_message)
-    .collect()
+    .collect();
+
+    info!("Parsed {} MT940 rows", result.len());
+
+    result
 }
 
 struct Money {
@@ -458,32 +463,30 @@ impl App {
     }
     fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         let widget = |ui: &mut Ui| {
-            Frame::NONE
-                .stroke(egui::Stroke::new(1.0, Color32::BLUE))
-                .inner_margin(Margin::same(120))
-                .show(ui, |ui| {
-                    let button_response = ui.button(bold("Pick MT940 file"));
-                    if button_response.clicked() {
-                        let task = rfd::AsyncFileDialog::new().pick_file();
-                        let data_clone = Arc::clone(&self.data);
-                        let ctx_clone = ctx.clone();
-                        execute(async move {
-                            let file = task.await;
-                            if let Some(file) = file {
-                                let file_content = file.read().await;
-                                info!("File loaded");
-                                let parsed = parse_mt940_file(&file_content);
-                                info!("Parsed {} MT940 rows", parsed.len());
+            Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                ui.add(Label::new(regular("TODO processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or")));
+                let button_response = ui.button(bold("pick one."));
+                if button_response.clicked() {
+                    let task = rfd::AsyncFileDialog::new().pick_file();
+                    let data_clone = Arc::clone(&self.data);
+                    let ctx_clone = ctx.clone();
+                    execute(async move {
+                        let file = task.await;
+                        if let Some(file) = file {
+                            let file_content = file.read().await;
+                            let parsed = parse_mt940_file(&file_content);
 
-                                let mut data = data_clone.lock().unwrap();
-                                *data = parsed;
-                                // Redraw so the user can see the result of file load even when window
-                                // isn't active.
-                                ctx_clone.request_repaint();
-                            }
-                        });
-                    }
+                            let mut data = data_clone.lock().unwrap();
+                            *data = parsed;
+                            // Redraw so the user can see the result of file load even when window
+                            // isn't active.
+                            ctx_clone.request_repaint();
+                        }
+                    });
+                }
                 });
+            });
         };
         let widget_size = ui
             .scope_builder(UiBuilder::new().invisible(), widget)
@@ -491,17 +494,79 @@ impl App {
             .rect
             .size();
         let available_size = ui.max_rect().size();
-        ui.allocate_ui_at_rect(
-            Rect::from_min_size(
-                [
-                    available_size.x / 2.0 - widget_size.x / 2.0,
-                    available_size.y / 2.0 - widget_size.y / 2.0,
-                ]
-                .into(),
-                widget_size,
-            ),
-            widget,
+        // Where we'll paint the widget at
+        let target_rect = Rect::from_min_size(
+            [
+                available_size.x / 2.0 - widget_size.x / 2.0,
+                available_size.y / 2.0 - widget_size.y / 2.0,
+            ]
+            .into(),
+            widget_size,
         );
+        let (hovering, dropped_file) = ctx.input(|i| {
+            (
+                !i.raw.hovered_files.is_empty(),
+                i.raw.dropped_files.first().cloned(),
+            )
+        });
+
+        if let Some(dropped_file) = dropped_file {
+            let mut file_content = Vec::new();
+
+            #[cfg(target_arch = "wasm32")]
+            if let Some(bytes) = dropped_file.bytes {
+                file_content = bytes.to_vec();
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(path) = dropped_file.path {
+                file_content = std::fs::read(&path).expect("Couldn't read file");
+            }
+
+            let parsed = parse_mt940_file(&file_content);
+
+            let mut data = self.data.lock().unwrap();
+            *data = parsed;
+        }
+
+        ui.allocate_ui_at_rect(target_rect, |ui| {
+            if hovering {
+                // Show animation
+                ctx.request_repaint();
+            }
+            let animation_time = 1.0;
+            let animate_factor =
+                ctx.animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
+            let intensity = 0.05;
+            let period = 10.0;
+            let speed = 0.1;
+            let time = (ctx.input(|i| i.time) % std::f64::consts::TAU) as f32;
+            crate::utils::paint_dashed_rect_shape(
+                ui,
+                RectShape::stroke(
+                    target_rect,
+                    CornerRadius::same(50),
+                    if hovering {
+                        egui::Stroke::new(4.0, Color32::DARK_GRAY)
+                    } else {
+                        egui::Stroke::new(4.0, Color32::GRAY)
+                    },
+                    StrokeKind::Middle,
+                ),
+                10.0,
+                10.0,
+                |pos| {
+                    let center_to_pos = *pos - target_rect.center();
+                    *pos + animate_factor
+                        * intensity
+                        * (((center_to_pos.angle() + (speed * time)) * period).sin())
+                        * center_to_pos
+                },
+            );
+
+            // Paint the inside
+            widget(ui);
+        });
     }
     /// Annotate data rows
     fn update_annotations(&mut self) {
