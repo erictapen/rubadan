@@ -739,11 +739,11 @@ impl App {
                     let mut drop_to = None;
 
                     for (i, rule) in self.rules.iter_mut().enumerate() {
-                        match &*rule {
-                            &Rule::Complete {
+                        match *rule {
+                            Rule::Complete {
                                 enabled, dragged, ..
                             } => {
-                                let old_enabled = enabled.clone();
+                                let old_enabled = enabled;
                                 let egui::InnerResponse {
                                     inner: rule_response,
                                     response,
@@ -815,7 +815,7 @@ impl App {
                                     }
                                 }
                             }
-                            &Rule::Incomplete { .. } => {
+                            Rule::Incomplete { .. } => {
                                 a_rule_is_being_edited = true;
                             }
                         }
@@ -981,7 +981,7 @@ impl Rule {
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |= condition.ui(ui, hovered_condition, color);
-                    rule_text |= ui.add(Label::new(regular(&category).color(color)));
+                    rule_text |= ui.add(Label::new(regular(category).color(color)));
                     if !*enabled {
                         ui.painter().hline(
                             rule_text.rect.x_range(),
@@ -996,13 +996,10 @@ impl Rule {
                 response
             }
 
-            Self::Incomplete { .. } => {
-                let response = ui.horizontal(|ui| {
-                    let mut r = ui.add(Label::new(regular("wip")));
-                    r
-                });
-                response
-            }
+            Self::Incomplete { .. } => ui.horizontal(|ui| {
+                let mut r = ui.add(Label::new(regular("wip")));
+                r
+            }),
         }
     }
     fn matches(&self, entry: &DataRow) -> bool {
