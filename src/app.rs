@@ -529,7 +529,7 @@ impl App {
             *data = parsed;
         }
 
-        ui.allocate_ui_at_rect(target_rect, |ui| {
+        ui.scope_builder(UiBuilder::new().max_rect(target_rect), |ui| {
             let animation_time = 1.0;
             let animate_factor =
                 ctx.animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
