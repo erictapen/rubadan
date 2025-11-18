@@ -530,13 +530,13 @@ impl App {
         }
 
         ui.allocate_ui_at_rect(target_rect, |ui| {
-            if hovering {
-                // Show animation
-                ctx.request_repaint();
-            }
             let animation_time = 1.0;
             let animate_factor =
                 ctx.animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
+            if animate_factor > 0.0 {
+                // Show animation
+                ctx.request_repaint();
+            }
             let intensity = 0.05;
             let period = 10.0;
             let speed = 0.1;
