@@ -29,6 +29,7 @@ iban = "*"
 strum = "*"
 strum_macros = "*"
 chrono = "*"
+indexmap = "*"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

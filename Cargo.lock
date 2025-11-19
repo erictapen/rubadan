@@ -2053,6 +2053,7 @@ dependencies = [
  "epaint 0.33.0",
  "futures",
  "iban",
+ "indexmap 1.9.3",
  "log",
  "mt940",
  "rfd",

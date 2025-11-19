@@ -285,7 +285,77 @@ struct DataRow {
     iban: Option<Highlightable<RawIban>>,
     name: Option<Highlightable<String>>,
     purpose: Option<Highlightable<String>>,
-    annotation: Option<Highlightable<String>>,
+    annotation: Annotation,
+}
+
+#[derive(Default)]
+struct Annotation {
+    derived: Option<Highlightable<String>>,
+    manual: Option<String>,
+}
+
+impl Annotation {
+    fn derived(str: String) -> Self {
+        Self {
+            derived: Some(Highlightable::new(str)),
+            manual: Default::default(),
+        }
+    }
+    /// The final value that is used for e.g. exporting
+    fn category(&self) -> Option<String> {
+        if let Some(derivedh) = &self.derived {
+            Some(derivedh.inner.clone())
+        } else if let Some(manual) = &self.manual {
+            Some(manual.to_string())
+        } else {
+            None
+        }
+    }
+    fn ui(
+        &mut self,
+        ui: &mut Ui,
+        known_categories: &indexmap::IndexSet<String>,
+        minimap: &mut Minimap,
+    ) {
+        ui.horizontal(|ui| {
+            if self.manual.is_some() {
+                if ui.add(Button::new(symbol("🗙"))).clicked() {
+                    self.manual = None;
+                };
+            }
+            let rect = egui::ComboBox::from_label("Annotate by hand")
+                .width(0.0)
+                .icon(|_, _, _, _| {})
+                .selected_text(regular(self.category().as_deref().unwrap_or("")))
+                .show_ui(ui, |ui: &mut Ui| {
+                    for category in known_categories {
+                        ui.selectable_value(
+                            &mut self.manual,
+                            Some(category.clone()),
+                            regular(category),
+                        );
+                    }
+                })
+                .response
+                .rect;
+            // derived takes precedence, so we strike through the label again
+            if self.derived.is_some() && self.manual.is_some() {
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.center().y,
+                    egui::Stroke::new(2.0, Color32::BLACK),
+                );
+            }
+            if let Annotation {
+                manual: Some(_),
+                derived: Some(hstring),
+                ..
+            } = self
+            {
+                hstring.ui(ui, minimap);
+            }
+        });
+    }
 }
 
 impl DataRow {
@@ -318,7 +388,7 @@ impl DataRow {
                     iban: iban.map(RawIban).map(Highlightable::new),
                     name: name.map(Highlightable::new),
                     purpose: purpose.map(Highlightable::new),
-                    annotation: None,
+                    annotation: Default::default(),
                 }
             })
             .collect()
@@ -405,6 +475,7 @@ impl Minimap {
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
+    known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
 }
@@ -454,6 +525,7 @@ impl App {
                 ],
                 hints: Default::default(),
                 minimap: Default::default(),
+                known_categories: Default::default(),
             }
         };
         #[cfg(not(feature = "demo"))]
@@ -569,16 +641,23 @@ impl App {
         });
     }
     /// Annotate data rows
+    /// The idea is to not run this every frame
     fn update_annotations(&mut self) {
         for entry in &mut *self.data.lock().unwrap() {
-            entry.annotation = None;
+            entry.annotation = Default::default();
             for rule in &self.rules {
                 // We only use complete rules for annotation
                 if let Rule::Complete { category, .. } = rule {
                     if rule.matches(entry) {
-                        entry.annotation = Some(Highlightable::new(category.clone()));
+                        entry.annotation = Annotation::derived(category.clone());
                     }
                 }
+            }
+        }
+        self.known_categories.clear();
+        for rule in &self.rules {
+            if let Rule::Complete { category, .. } = rule {
+                self.known_categories.insert(category.clone());
             }
         }
     }
@@ -629,6 +708,14 @@ impl App {
                 } else {
                     self.minimap(ctx, ui);
 
+                    // Rows should be at least as high as a button, as that is currently the limiting factor
+                    // TODO make this not allocate space
+                    let row_height_min = ui
+                        .scope_builder(UiBuilder::new(), |ui| ui.button(symbol("🗙")))
+                        .response
+                        .rect
+                        .height();
+
                     let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
                         use egui_extras::{Column, TableBuilder};
                         let table_state = TableBuilder::new(ui)
@@ -662,8 +749,8 @@ impl App {
                                 });
                             })
                             .body(|mut body| {
-                                for entry in &*self.data.lock().unwrap() {
-                                    body.row(0.0, |mut row| {
+                                for entry in &mut *self.data.lock().unwrap() {
+                                    body.row(row_height_min, |mut row| {
                                         // date
                                         row.col(|ui| {
                                             entry.date.ui(ui, &mut self.minimap);
@@ -697,9 +784,11 @@ impl App {
                                         });
                                         // annotation
                                         row.col(|ui| {
-                                            if let Some(annotationh) = &entry.annotation {
-                                                annotationh.ui(ui, &mut self.minimap);
-                                            }
+                                            entry.annotation.ui(
+                                                ui,
+                                                &self.known_categories,
+                                                &mut self.minimap,
+                                            );
                                         });
                                     });
                                 }
