@@ -551,6 +551,7 @@ impl App {
 
                             let mut data = data_clone.lock().unwrap();
                             *data = parsed;
+                            App::request_update_annotations(&ctx_clone);
                             // Redraw so the user can see the result of file load even when window
                             // isn't active.
                             ctx_clone.request_repaint();
@@ -661,6 +662,12 @@ impl App {
             }
         }
     }
+    /// Request to update_annotations
+    fn request_update_annotations(ctx: &egui::Context) {
+        ctx.data_mut(|d| {
+            d.insert_temp("update_annotations".into(), true);
+        });
+    }
     fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         if ctx.input(|i| i.screen_rect().width()) > 600.0 {
             egui::SidePanel::right("minimap")
@@ -691,6 +698,27 @@ impl App {
                             Color32::LIGHT_GRAY.linear_multiply(0.5),
                         ));
                     }
+
+                    // egui::TopBottomPanel::bottom("clear_data_button").frame(Frame::NONE).show_inside(ui, |ui| {
+                    // if ui.add(Button::new(regular("Clear transactions and load new data"))).clicked() {
+                    //     self.data.lock().unwrap().clear();
+                    // }
+                    // });
+
+                    ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
+                        if ui
+                            .add_sized(
+                                [ui.available_width(), 0.0],
+                                Button::new(regular("Clear data & load new file"))
+                                    .fill(Color32::LIGHT_RED),
+                            )
+                            .clicked()
+                        {
+                            self.data.lock().unwrap().clear();
+                        }
+
+                        ui.add_space(ui.available_height());
+                    });
                 });
         }
         // Clear state so that we can write down elements again
@@ -792,7 +820,8 @@ impl App {
                                         });
                                     });
                                 }
-                                self.minimap.frame = Some(body.ui_mut().min_rect());
+                                self.minimap.frame =
+                                    Some(body.ui_mut().min_rect()).filter(|r| r.width() != 0.0);
                             });
 
                         // For visualising which part of the minimap is visible in the data panel,
@@ -973,6 +1002,17 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.hints.clear();
+
+        // We allow setting a flag to request an update to annotations from e.g. a closure.
+        if ctx.data(|d| {
+            d.get_temp::<bool>("update_annotations".into())
+                .unwrap_or(false)
+        }) {
+            self.update_annotations();
+            ctx.data_mut(|d| {
+                d.insert_temp("update_annotations".into(), false);
+            });
+        }
 
         // We turn off text selection globally in case the user is dragging
         // something
