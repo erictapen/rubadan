@@ -1107,6 +1107,7 @@ impl Rule {
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |= condition.ui(ui, hovered_condition, color);
+                    rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
                     rule_text |= ui.add(Label::new(regular(category).color(color)));
                     if !*enabled {
                         ui.painter().hline(
