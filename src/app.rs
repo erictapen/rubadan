@@ -26,9 +26,12 @@ use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 
+use std::fmt::Display;
+
+use egui::text_edit::TextEdit;
 use egui::{
-    Align, Button, Color32, Frame, InnerResponse, Label, Layout, Margin, Rect, Response, RichText,
-    StrokeKind, Ui, UiBuilder,
+    Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, Layout, Margin, Rect,
+    Response, RichText, StrokeKind, Ui, UiBuilder,
 };
 use epaint::{CornerRadius, RectShape};
 use log::{error, info, warn};
@@ -41,6 +44,11 @@ use crate::widgets;
 
 const THIN_SPACE: &str = "\u{2009}";
 const GRIP_SYMBOL: &str = "⠿";
+const CANCEL_SYMBOL: &str = "🗙";
+const CHECK_SYMBOL: &str = "✓";
+
+/// Time in seconds
+const WARN_FADEOUT_TIME: f32 = 1.0;
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -319,7 +327,7 @@ impl Annotation {
     ) {
         ui.horizontal(|ui| {
             if self.manual.is_some() {
-                if ui.add(Button::new(symbol("🗙"))).clicked() {
+                if ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
                     self.manual = None;
                 };
             }
@@ -501,24 +509,27 @@ impl App {
                 data: Arc::new(Mutex::new(data)),
                 //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
                 rules: vec![
-                    Rule::new(
+                    Rule::complete(
                         Condition::Plain(Comparison {
                             field: Field::Purpose,
-                            ctype: ComparisonType::Contains("MINT".to_string()),
+                            ctype: ComparisonType::Contains,
+                            value: "MINT".to_string(),
                         }),
                         "A".to_string(),
                     ),
-                    Rule::new(
+                    Rule::complete(
                         Condition::Plain(Comparison {
                             field: Field::Purpose,
-                            ctype: ComparisonType::Contains("spezifiziert".to_string()),
+                            ctype: ComparisonType::Contains,
+                            value: "spezifiziert".to_string(),
                         }),
                         "B".to_string(),
                     ),
-                    Rule::new(
+                    Rule::complete(
                         Condition::Plain(Comparison {
                             field: Field::Purpose,
-                            ctype: ComparisonType::Contains("Buchung".to_string()),
+                            ctype: ComparisonType::Contains,
+                            value: "Buchung".to_string(),
                         }),
                         "C".to_string(),
                     ),
@@ -836,6 +847,7 @@ impl App {
     }
     fn rules_panel(&mut self, ctx: &egui::Context) {
         let mut a_rule_changed = false;
+        // Keep track if there is any rule being edited
         let mut a_rule_is_being_edited = false;
 
         let mut hovered_rule: Option<Rule> = None;
@@ -932,6 +944,7 @@ impl App {
                             }
                             Rule::Incomplete { .. } => {
                                 a_rule_is_being_edited = true;
+                                rule.ui(ui, &mut hovered_condition, i);
                             }
                         }
                     }
@@ -948,12 +961,11 @@ impl App {
                     }
 
                     if !a_rule_is_being_edited
-                        && ui.add(Button::new(regular("+ Add Rule"))).clicked()
+                        && ui.add(Button::new(regular("+ Add new rule"))).clicked()
                     {
-                        self.rules.push(Rule::Incomplete {
-                            condition: Condition::incomplete(),
-                            category: None,
-                        });
+                        info!("Pushed");
+                        self.rules
+                            .push(Rule::incomplete(Condition::incomplete(), "".to_string()));
                     }
                 });
         });
@@ -1062,18 +1074,27 @@ enum Rule {
     },
     Incomplete {
         condition: Condition,
-        category: Option<String>,
+        category: String,
+        /// Try to create this rule next frame
+        try_to_complete: bool,
     },
 }
 
 impl Rule {
-    fn new(condition: Condition, category: String) -> Self {
-        Rule::Complete {
+    fn complete(condition: Condition, category: String) -> Self {
+        Self::Complete {
             enabled: true,
             condition,
             category,
             hovered: false,
             dragged: false,
+        }
+    }
+    fn incomplete(condition: Condition, category: String) -> Self {
+        Self::Incomplete {
+            condition,
+            category,
+            try_to_complete: false,
         }
     }
     fn ui(
@@ -1083,20 +1104,79 @@ impl Rule {
         rule_i: usize,
     ) -> InnerResponse<Response> {
         match self {
+            &mut Self::Incomplete {
+                ref mut category,
+                ref mut condition,
+                ref mut try_to_complete,
+                ..
+            } => ui.horizontal_top(|ui| {
+                let mut r = ui.add(Label::new(regular("When")));
+                r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK);
+                r |= ui.add(Label::new(regular("then mark as")));
+                let text_edit_category_response = ui.add(TextEdit::singleline(category));
+                if category.is_empty() {
+                    missing_value_indicator(
+                        ui,
+                        text_edit_category_response.rect,
+                        "missing_category".into(),
+                        *try_to_complete,
+                    );
+                }
+                r |= text_edit_category_response;
+
+                // In case anything is missing for completion
+                let (missing_values_text_bg_color, missing_values_text_color) = (
+                    animate_color_pulse(
+                        ui.ctx(),
+                        "missing_values_text_bg".into(),
+                        *try_to_complete,
+                        Color32::LIGHT_RED,
+                        WARN_FADEOUT_TIME,
+                    ),
+                    animate_color_pulse(
+                        ui.ctx(),
+                        "missing_values_text".into(),
+                        *try_to_complete,
+                        Color32::BLACK,
+                        4.0 * WARN_FADEOUT_TIME,
+                    ),
+                );
+
+                // Try to convert into Rule::Complete
+                if *try_to_complete {}
+
+                *try_to_complete = false;
+
+                let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
+                if complete_button_response.clicked() {
+                    *try_to_complete = true;
+                }
+                if missing_values_text_color != Color32::TRANSPARENT {
+                    r |= ui.add(Label::new(
+                        regular("Fill out all fields before creating rule")
+                            .background_color(missing_values_text_bg_color)
+                            .color(missing_values_text_color),
+                    ));
+                }
+                r |= complete_button_response;
+                r
+            }),
+
             &mut Rule::Complete {
                 ref mut enabled,
                 mut dragged,
                 ref mut hovered,
-                ref condition,
+                ref mut condition,
                 ref category,
                 ..
             } => {
-                // When being dragged we render the rule in a more subtle color
-                let color = match (&*enabled, dragged) {
-                    (false, _) | (_, true) => Color32::GRAY,
-                    (_, false) => Color32::PLACEHOLDER,
-                };
-                let response = ui.horizontal(|ui| {
+                let response = ui.horizontal_top(|ui| {
+                    // When being dragged we render the rule in a more subtle color
+                    let color = match (&*enabled, dragged) {
+                        (false, _) | (_, true) => Color32::GRAY,
+                        (_, false) => Color32::PLACEHOLDER,
+                    };
+
                     let mut r = ui.add(Label::new(if *hovered {
                         symbol(GRIP_SYMBOL).color(Color32::DARK_GRAY)
                     } else {
@@ -1106,7 +1186,7 @@ impl Rule {
                     dragged = r.dragged();
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
-                    rule_text |= condition.ui(ui, hovered_condition, color);
+                    rule_text |= condition.ui(ui, false, hovered_condition, color);
                     rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
                     rule_text |= ui.add(Label::new(regular(category).color(color)));
                     if !*enabled {
@@ -1122,11 +1202,6 @@ impl Rule {
                 *hovered = response.inner.hovered();
                 response
             }
-
-            Self::Incomplete { .. } => ui.horizontal(|ui| {
-                let mut r = ui.add(Label::new(regular("wip")));
-                r
-            }),
         }
     }
     fn matches(&self, entry: &DataRow) -> bool {
@@ -1154,18 +1229,18 @@ enum Condition {
     And(Box<Condition>, Box<Condition>),
     Or(Box<Condition>, Box<Condition>),
     Incomplete {
-        arg1: Option<Box<Condition>>,
-        operand: Option<Operand>,
-        arg2: Option<Box<Condition>>,
+        field: Option<Field>,
+        ctype: Option<ComparisonType>,
+        value: String,
     },
 }
 
 impl Condition {
     fn incomplete() -> Self {
         Self::Incomplete {
-            arg1: None,
-            operand: None,
-            arg2: None,
+            field: None,
+            ctype: None,
+            value: String::new(),
         }
     }
     fn matches(&self, entry: &DataRow) -> bool {
@@ -1177,24 +1252,137 @@ impl Condition {
             Self::Incomplete { .. } => false,
         }
     }
+    /// try_to_complete: only relevant for Incomplete rules
     fn ui(
-        &self,
+        &mut self,
         ui: &mut Ui,
+        try_to_complete: bool,
         hovered_condition: &mut Option<Condition>,
         color: Color32,
     ) -> Response {
         match self {
-            Condition::Plain(Comparison {
+            Self::Plain(Comparison {
                 field,
-                ctype: ComparisonType::Contains(value),
+                ctype,
+                value,
             }) => {
                 let response = ui.add(Label::new(
-                    regular(format!("{field:?} contains \"{value}\"").as_str()).color(color),
+                    regular(format!("{field} {ctype} \"{value}\"").as_str()).color(color),
                 ));
                 if response.hovered() {
                     *hovered_condition = Some(self.clone());
                 }
                 response
+            }
+            Self::Incomplete {
+                field,
+                ctype,
+                value,
+                ..
+            } => {
+                let mut r;
+
+                // field
+                {
+                    let mut set_field_to_none = false;
+                    r = match field {
+                        None => {
+                            let r = ui
+                                .vertical(|ui| {
+                                    if ui.add(Button::new(regular("Name"))).clicked() {
+                                        *field = Some(Field::Name);
+                                    }
+                                    if ui.add(Button::new(regular("Purpose"))).clicked() {
+                                        *field = Some(Field::Purpose);
+                                    }
+                                    if ui.add(Button::new(regular("IBAN"))).clicked() {
+                                        *field = Some(Field::Iban);
+                                    }
+                                })
+                                .response;
+                            missing_value_indicator(
+                                ui,
+                                r.rect,
+                                "missing_field".into(),
+                                try_to_complete,
+                            );
+                            r
+                        }
+                        Some(selected_field) => {
+                            let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                            if r.clicked() {
+                                set_field_to_none = true;
+                            }
+                            r |= ui.add(Label::new(regular(format!("{selected_field}").as_str())));
+                            r
+                        }
+                    };
+                    if set_field_to_none {
+                        *field = None;
+                    }
+                }
+
+                // ctype
+                {
+                    let mut set_ctype_to_none = false;
+                    r |= match ctype {
+                        None => {
+                            let r = ui
+                                .vertical(|ui| {
+                                    if ui
+                                        .button(regular(
+                                            format!("{}", ComparisonType::Contains).as_str(),
+                                        ))
+                                        .clicked()
+                                    {
+                                        *ctype = Some(ComparisonType::Contains);
+                                    }
+                                    if ui
+                                        .button(regular(
+                                            format!("{}", ComparisonType::Exact).as_str(),
+                                        ))
+                                        .clicked()
+                                    {
+                                        *ctype = Some(ComparisonType::Exact);
+                                    }
+                                })
+                                .response;
+                            missing_value_indicator(
+                                ui,
+                                r.rect,
+                                "missing_ctype".into(),
+                                try_to_complete,
+                            );
+                            r
+                        }
+                        Some(selected_ctype) => {
+                            let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                            if r.clicked() {
+                                set_ctype_to_none = true;
+                            }
+                            r |= ui.add(Label::new(regular(format!("{selected_ctype}").as_str())));
+                            r
+                        }
+                    };
+                    if set_ctype_to_none {
+                        *ctype = None;
+                    }
+                }
+
+                // value
+                {
+                    let text_edit_response = ui.add(TextEdit::singleline(&mut (*value)));
+                    if value.is_empty() {
+                        missing_value_indicator(
+                            ui,
+                            text_edit_response.rect,
+                            "missing_value".into(),
+                            try_to_complete,
+                        );
+                    }
+                    r |= text_edit_response;
+                }
+                r
             }
             _ => {
                 unimplemented!()
@@ -1209,58 +1397,107 @@ impl Default for Condition {
     }
 }
 
+fn animate_color_pulse(
+    ctx: &Context,
+    id: Id,
+    send_pulse: bool,
+    color: Color32,
+    time_in_seconds: f32,
+) -> Color32 {
+    let current_time = ctx.input(|i| i.time) as f32;
+    if send_pulse {
+        ctx.data_mut(|d| {
+            d.insert_temp(id, current_time);
+        });
+    }
+    if let Some(time_of_last_fail) = ctx.data_mut(|d| d.get_temp::<f32>(id)) {
+        ctx.request_repaint();
+        let time_since_last_fail = current_time - time_of_last_fail;
+        let warn_factor = 1.0 - (time_since_last_fail / time_in_seconds);
+        if warn_factor > 0.0 {
+            Color32::TRANSPARENT.gamma_multiply(1.0 - warn_factor)
+                + color.gamma_multiply(warn_factor)
+        } else {
+            ctx.data_mut(|d| {
+                d.remove_temp::<f32>(id);
+            });
+            Color32::TRANSPARENT
+        }
+    } else {
+        Color32::TRANSPARENT
+    }
+}
+
+/// When a condition is missing a value and the user want's to complete the Rule, we can show a
+/// visual warning which values are missing.
+fn missing_value_indicator(ui: &mut Ui, rect: Rect, id: Id, try_to_complete: bool) {
+    ui.painter().add(epaint::RectShape::filled(
+        rect,
+        CornerRadius::default(),
+        animate_color_pulse(
+            ui.ctx(),
+            id,
+            try_to_complete,
+            Color32::LIGHT_RED,
+            WARN_FADEOUT_TIME,
+        ),
+    ));
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct Comparison {
     field: Field,
     ctype: ComparisonType,
+    value: String,
 }
 
 impl Comparison {
     fn matches(&self, entry: &DataRow) -> bool {
-        match (&self.field, entry) {
+        let data = match (&self.field, entry) {
             (
                 Field::Name,
                 DataRow {
                     name: Some(Highlightable { inner: name, .. }),
                     ..
                 },
-            ) => self.ctype.matches(name),
+            ) => name,
             (
                 Field::Purpose,
                 DataRow {
                     purpose: Some(Highlightable { inner: purpose, .. }),
                     ..
                 },
-            ) => self.ctype.matches(purpose),
+            ) => purpose,
             (
                 Field::Iban,
                 DataRow {
                     iban: Some(Highlightable { inner: iban, .. }),
                     ..
                 },
-            ) => self.ctype.matches(&iban.0),
-            _ => false,
+            ) => &iban.0,
+            _ => {
+                return false;
+            }
+        };
+        match self.ctype {
+            ComparisonType::Contains => data.contains(&self.value),
+            ComparisonType::Exact => *data == self.value,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 enum ComparisonType {
-    Exact(String),
-    Contains(String),
+    #[default]
+    Exact,
+    Contains,
 }
 
-impl Default for ComparisonType {
-    fn default() -> Self {
-        Self::Exact(Default::default())
-    }
-}
-
-impl ComparisonType {
-    fn matches(&self, value: &str) -> bool {
+impl Display for ComparisonType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Contains(str) => value.contains(str),
-            Self::Exact(str) => value == str,
+            Self::Exact => write!(f, "is exactly"),
+            Self::Contains => write!(f, "contains"),
         }
     }
 }
@@ -1271,4 +1508,14 @@ enum Field {
     Name,
     Purpose,
     Iban,
+}
+
+impl Display for Field {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Name => write!(f, "Name"),
+            Self::Purpose => write!(f, "Purpose"),
+            Self::Iban => write!(f, "IBAN"),
+        }
+    }
 }
