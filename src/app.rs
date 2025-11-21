@@ -668,7 +668,7 @@ impl App {
             d.insert_temp("update_annotations".into(), true);
         });
     }
-    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui, row_height_min: f32) {
         if ctx.input(|i| i.screen_rect().width()) > 600.0 {
             egui::SidePanel::right("minimap")
                 .resizable(false)
@@ -686,6 +686,7 @@ impl App {
                         let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
 
                         for mut rect_shape in self.minimap.elements.drain(..) {
+                            rect_shape.rect = rect_shape.rect.expand2([0.0, row_height_min].into());
                             rect_shape.rect = transform.transform_rect(rect_shape.rect);
                             rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
                             ui.painter().add(rect_shape);
@@ -699,18 +700,14 @@ impl App {
                         ));
                     }
 
-                    // egui::TopBottomPanel::bottom("clear_data_button").frame(Frame::NONE).show_inside(ui, |ui| {
-                    // if ui.add(Button::new(regular("Clear transactions and load new data"))).clicked() {
-                    //     self.data.lock().unwrap().clear();
-                    // }
-                    // });
-
                     ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
                         if ui
                             .add_sized(
                                 [ui.available_width(), 0.0],
-                                Button::new(regular("Clear data & load new file"))
-                                    .fill(Color32::LIGHT_RED),
+                                Button::new(
+                                    regular("Clear data and load new file").color(Color32::WHITE),
+                                )
+                                .fill(Color32::BLUE),
                             )
                             .clicked()
                         {
@@ -734,8 +731,6 @@ impl App {
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
                 } else {
-                    self.minimap(ctx, ui);
-
                     // Rows should be at least as high as a button, as that is currently the limiting factor
                     // TODO make this not allocate space
                     let row_height_min = ui
@@ -743,6 +738,8 @@ impl App {
                         .response
                         .rect
                         .height();
+
+                    self.minimap(ctx, ui, row_height_min);
 
                     let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
                         use egui_extras::{Column, TableBuilder};
