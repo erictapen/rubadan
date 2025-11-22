@@ -119,6 +119,22 @@ fn regular(text: &str) -> RichText {
     RichText::new(text).family(family)
 }
 
+#[cfg(feature = "egui_parley")]
+fn regular_font_id(ui: &Ui) -> egui::text::style::FontId {
+    egui::text::style::FontId::simple(
+        egui::style::TextStyle::Body.resolve(ui.style()).size,
+        FontFamily::Named("IBM Plex Sans".into()),
+    )
+}
+
+#[cfg(feature = "egui_latest")]
+fn regular_font_id(ui: &Ui) -> egui::FontId {
+    egui::FontId::new(
+        egui::style::TextStyle::Body.resolve(ui.style()).size,
+        FontFamily::Name("IBM Plex Sans".into()),
+    )
+}
+
 fn bold(text: &str) -> RichText {
     #[cfg(feature = "egui_parley")]
     let family = FontFamily::Named("IBM Plex Sans Bold".into());
@@ -1113,7 +1129,8 @@ impl Rule {
                 let mut r = ui.add(Label::new(regular("When")));
                 r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK);
                 r |= ui.add(Label::new(regular("then mark as")));
-                let text_edit_category_response = ui.add(TextEdit::singleline(category));
+                let text_edit_category_response =
+                    ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
                 if category.is_empty() {
                     missing_value_indicator(
                         ui,
@@ -1371,7 +1388,8 @@ impl Condition {
 
                 // value
                 {
-                    let text_edit_response = ui.add(TextEdit::singleline(&mut (*value)));
+                    let text_edit_response =
+                        ui.add(TextEdit::singleline(&mut (*value)).font(regular_font_id(ui)));
                     if value.is_empty() {
                         missing_value_indicator(
                             ui,

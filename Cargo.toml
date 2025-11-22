@@ -46,4 +46,3 @@ eframe_latest = { package = "eframe", optional = true, version = "*", default-fe
 
 [profile.release]
 opt-level = 2
-
