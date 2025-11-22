@@ -761,7 +761,7 @@ impl App {
                     // Rows should be at least as high as a button, as that is currently the limiting factor
                     // TODO make this not allocate space
                     let row_height_min = ui
-                        .scope_builder(UiBuilder::new(), |ui| ui.button(symbol("🗙")))
+                        .scope_builder(UiBuilder::new().invisible(), |ui| ui.button(symbol("🗙")))
                         .response
                         .rect
                         .height();
