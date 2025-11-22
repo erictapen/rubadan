@@ -329,8 +329,8 @@ impl Annotation {
     fn category(&self) -> Option<String> {
         if let Some(derivedh) = &self.derived {
             Some(derivedh.inner.clone())
-        } else if let Some(manual) = &self.manual {
-            Some(manual.to_string())
+        } else if self.manual.is_some() {
+            self.manual.as_ref().map(|manual| manual.to_string())
         } else {
             None
         }
@@ -1119,8 +1119,8 @@ impl Rule {
         hovered_condition: &mut Option<Condition>,
         rule_i: usize,
     ) -> InnerResponse<Response> {
-        match self {
-            &mut Self::Incomplete {
+        match *self {
+            Self::Incomplete {
                 ref mut category,
                 ref mut condition,
                 ref mut try_to_complete,
@@ -1179,7 +1179,7 @@ impl Rule {
                 r
             }),
 
-            &mut Rule::Complete {
+            Rule::Complete {
                 ref mut enabled,
                 mut dragged,
                 ref mut hovered,
