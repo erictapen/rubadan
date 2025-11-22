@@ -1091,7 +1091,7 @@ enum Rule {
     Incomplete {
         condition: Condition,
         category: String,
-        /// Try to create this rule next frame
+        /// Try to complete this rule next frame
         try_to_complete: bool,
     },
 }
@@ -1113,71 +1113,99 @@ impl Rule {
             try_to_complete: false,
         }
     }
+    fn try_into_complete(&self) -> Option<Self> {
+        if let Self::Incomplete {
+            condition,
+            category,
+            ..
+        } = self
+        {
+            if category.is_empty() {
+                return None;
+            }
+            condition
+                .try_into_complete()
+                .map(|c| Self::complete(c, category.to_string()))
+        } else {
+            None
+        }
+    }
     fn ui(
         &mut self,
         ui: &mut Ui,
         hovered_condition: &mut Option<Condition>,
         rule_i: usize,
     ) -> InnerResponse<Response> {
-        match *self {
+        let completed_rule = if let Self::Incomplete {
+            try_to_complete: true,
+            ..
+        } = self
+        {
+            // Try to convert into Rule::Complete
+            self.clone().try_into_complete()
+        } else {
+            None
+        };
+
+        let response = match *self {
             Self::Incomplete {
                 ref mut category,
                 ref mut condition,
                 ref mut try_to_complete,
                 ..
-            } => ui.horizontal_top(|ui| {
-                let mut r = ui.add(Label::new(regular("When")));
-                r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK);
-                r |= ui.add(Label::new(regular("then mark as")));
-                let text_edit_category_response =
-                    ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
-                if category.is_empty() {
-                    missing_value_indicator(
-                        ui,
-                        text_edit_category_response.rect,
-                        "missing_category".into(),
-                        *try_to_complete,
+            } => {
+                ui.horizontal_top(|ui| {
+                    let mut r = ui.add(Label::new(regular("When")));
+                    r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK);
+                    r |= ui.add(Label::new(regular("then mark as")));
+                    let text_edit_category_response =
+                        ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
+                    if category.is_empty() {
+                        missing_value_indicator(
+                            ui,
+                            text_edit_category_response.rect,
+                            "missing_category".into(),
+                            *try_to_complete,
+                        );
+                    }
+                    r |= text_edit_category_response;
+
+                    // In case anything is missing for completion
+                    let (missing_values_text_bg_color, missing_values_text_color) = (
+                        animate_color_pulse(
+                            ui.ctx(),
+                            "missing_values_text_bg".into(),
+                            *try_to_complete,
+                            Color32::LIGHT_RED,
+                            WARN_FADEOUT_TIME,
+                        ),
+                        animate_color_pulse(
+                            ui.ctx(),
+                            "missing_values_text".into(),
+                            *try_to_complete,
+                            Color32::BLACK,
+                            4.0 * WARN_FADEOUT_TIME,
+                        ),
                     );
-                }
-                r |= text_edit_category_response;
 
-                // In case anything is missing for completion
-                let (missing_values_text_bg_color, missing_values_text_color) = (
-                    animate_color_pulse(
-                        ui.ctx(),
-                        "missing_values_text_bg".into(),
-                        *try_to_complete,
-                        Color32::LIGHT_RED,
-                        WARN_FADEOUT_TIME,
-                    ),
-                    animate_color_pulse(
-                        ui.ctx(),
-                        "missing_values_text".into(),
-                        *try_to_complete,
-                        Color32::BLACK,
-                        4.0 * WARN_FADEOUT_TIME,
-                    ),
-                );
+                    *try_to_complete = false;
 
-                // Try to convert into Rule::Complete
-                if *try_to_complete {}
-
-                *try_to_complete = false;
-
-                let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
-                if complete_button_response.clicked() {
-                    *try_to_complete = true;
-                }
-                if missing_values_text_color != Color32::TRANSPARENT {
-                    r |= ui.add(Label::new(
-                        regular("Fill out all fields before creating rule")
-                            .background_color(missing_values_text_bg_color)
-                            .color(missing_values_text_color),
-                    ));
-                }
-                r |= complete_button_response;
-                r
-            }),
+                    let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
+                    if complete_button_response.clicked() {
+                        *try_to_complete = true;
+                    }
+                    if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
+                    {
+                        r |= ui.add(Label::new(
+                            regular("Fill out all fields before creating the rule")
+                                .background_color(missing_values_text_bg_color)
+                                .color(missing_values_text_color),
+                        ));
+                    }
+                    r |= complete_button_response;
+                    r
+                })
+            }
 
             Rule::Complete {
                 ref mut enabled,
@@ -1219,7 +1247,14 @@ impl Rule {
                 *hovered = response.inner.hovered();
                 response
             }
+        };
+
+        if let Some(completed_rule) = completed_rule {
+            // TODO update annotations
+            *self = completed_rule;
         }
+
+        response
     }
     fn matches(&self, entry: &DataRow) -> bool {
         match self {
@@ -1267,6 +1302,27 @@ impl Condition {
             Self::And(c1, c2) => c1.matches(entry) && c2.matches(entry),
             Self::Or(c1, c2) => c1.matches(entry) || c2.matches(entry),
             Self::Incomplete { .. } => false,
+        }
+    }
+    fn try_into_complete(&self) -> Option<Self> {
+        match self {
+            Condition::Incomplete {
+                field: Some(field),
+                ctype: Some(ctype),
+                value,
+            } => {
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(Self::Plain(Comparison {
+                        field: field.clone(),
+                        ctype: ctype.clone(),
+                        value: value.to_string(),
+                    }))
+                }
+            }
+            Condition::Incomplete { .. } => None,
+            c => Some(c.clone()),
         }
     }
     /// try_to_complete: only relevant for Incomplete rules
