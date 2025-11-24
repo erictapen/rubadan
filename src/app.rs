@@ -1250,8 +1250,8 @@ impl Rule {
         };
 
         if let Some(completed_rule) = completed_rule {
-            // TODO update annotations
             *self = completed_rule;
+            App::request_update_annotations(ui.ctx());
         }
 
         response
