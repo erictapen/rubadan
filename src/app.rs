@@ -722,8 +722,10 @@ impl App {
                         let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
 
                         for mut rect_shape in self.minimap.elements.drain(..) {
-                            rect_shape.rect =
-                                rect_shape.rect.expand2([0.0, 0.5 * row_height].into());
+                            // Expand the lines so that the gaps are closed
+                            rect_shape.rect = rect_shape
+                                .rect
+                                .expand2([0.0, (row_height - rect_shape.rect.height())].into());
                             rect_shape.rect = transform.transform_rect(rect_shape.rect);
                             rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
                             ui.painter().add(rect_shape);
@@ -803,7 +805,8 @@ impl App {
                                 .vertical_scroll_offset(self.data_vertical_scroll_offset)
                                 // Optional: Hide when data_panel_response doesn't indicate hover
                                 .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                                .auto_shrink([true, false])
+                                .auto_shrink([false, false])
+                            .striped(true)
                                 .column(Column::auto())
                                 .header(20.0, |mut header| {
                                     header.col(|ui| {
@@ -853,6 +856,7 @@ impl App {
                             // Let the annotations table show a scrollbar instead
                             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden)
                             .auto_shrink([false, false])
+                            .striped(true)
                             .column(Column::auto())
                             .column(Column::auto())
                             .column(Column::auto())
