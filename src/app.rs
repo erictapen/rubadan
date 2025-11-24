@@ -709,7 +709,7 @@ impl App {
             egui::SidePanel::right("minimap")
                 .resizable(false)
                 .exact_width(200.0)
-                .frame(egui::Frame::NONE.fill(egui::Color32::WHITE))
+                .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
                 .show_inside(ui, |ui| {
                     if let (Some(from), Some(mut visible_rect)) =
                         (self.minimap.frame, self.minimap.visible_rect)
@@ -778,20 +778,32 @@ impl App {
                         .rect
                         .height();
 
+                    // Predraw a shadow that's going to indicate that the data table isn't scrolled
+                    // entirely to the right
+                    if let Some(edge) = ctx.data(|d| {
+                        d.get_temp::<f32>("annotations_edge_for_blur".into())
+                    }) {
+                        info!("edge: {edge}");
+                        let rect = Rect::from_min_max([edge, -171.8].into(), [2338.0, 708.5].into());
+                        let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: 20, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
+                        ui.painter().add(shape);
+                    }
+
                     self.minimap(ctx, ui, row_height);
 
                     let mut offset_annotations = 0.0;
                     let mut offset_data = 0.0;
 
-                    egui::SidePanel::right("annotations_sidepanel")
+                    let sidepanel_response = egui::SidePanel::right("annotations_sidepanel")
                         .resizable(false)
-                        .exact_width(200.0)
+                        .min_width(200.0)
+                        .frame(Frame::NONE.fill(ui.visuals().panel_fill).inner_margin(5.0))
                         .show_inside(ui, |ui| {
                             let annotations_response = TableBuilder::new(ui)
                                 .vertical_scroll_offset(self.data_vertical_scroll_offset)
                                 // Optional: Hide when data_panel_response doesn't indicate hover
                                 .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                                .auto_shrink([false, false])
+                                .auto_shrink([true, false])
                                 .column(Column::auto())
                                 .header(20.0, |mut header| {
                                     header.col(|ui| {
@@ -831,9 +843,11 @@ impl App {
                                     }
                                 });
                                 offset_annotations = annotations_response.state.offset.y;
+
                         });
 
-                    let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
+
+                    let horizontal_output = egui::ScrollArea::horizontal().show(ui, |ui| {
                         let table_state = TableBuilder::new(ui)
                             .vertical_scroll_offset(self.data_vertical_scroll_offset)
                             // Let the annotations table show a scrollbar instead
@@ -915,8 +929,20 @@ impl App {
                         self.minimap.visible_rect = Some(table_state.inner_rect);
                     });
 
+                    // If there was a need for scrolling, we render the shadow before everything
+                    // next frame
+                    if horizontal_output.content_size.x > horizontal_output.inner_rect.width() {
+                      ctx.data_mut(|d| {
+                          d.insert_temp("annotations_edge_for_blur".into(), sidepanel_response.response.rect.min.x);
+                      });
+                    } else {
+                      ctx.data_mut(|d| {
+                          d.remove_temp::<f32>("annotations_edge_for_blur".into());
+                      });
+                    }
+
                     if let Some(ref mut visible_rect) = self.minimap.visible_rect {
-                        *visible_rect = visible_rect.intersect(horizontal_state.inner_rect);
+                        *visible_rect = visible_rect.intersect(horizontal_output.inner_rect);
                     }
                 }
             });
