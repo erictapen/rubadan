@@ -350,44 +350,42 @@ impl Annotation {
         known_categories: &indexmap::IndexSet<String>,
         minimap: &mut Minimap,
     ) {
-        ui.horizontal(|ui| {
-            if self.manual.is_some() {
-                if ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
-                    self.manual = None;
-                };
-            }
-            let rect = egui::ComboBox::from_label("Annotate by hand")
-                .width(0.0)
-                .icon(|_, _, _, _| {})
-                .selected_text(regular(self.category().as_deref().unwrap_or("")))
-                .show_ui(ui, |ui: &mut Ui| {
-                    for category in known_categories {
-                        ui.selectable_value(
-                            &mut self.manual,
-                            Some(category.clone()),
-                            regular(category),
-                        );
-                    }
-                })
-                .response
-                .rect;
-            // derived takes precedence, so we strike through the label again
-            if self.derived.is_some() && self.manual.is_some() {
-                ui.painter().hline(
-                    rect.x_range(),
-                    rect.center().y,
-                    egui::Stroke::new(2.0, Color32::BLACK),
-                );
-            }
-            if let Annotation {
-                manual: Some(_),
-                derived: Some(hstring),
-                ..
-            } = self
-            {
-                hstring.ui(ui, minimap);
-            }
-        });
+        if self.manual.is_some() {
+            if ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
+                self.manual = None;
+            };
+        }
+        let rect = egui::ComboBox::from_label("Annotate by hand")
+            .width(0.0)
+            .icon(|_, _, _, _| {})
+            .selected_text(regular(self.category().as_deref().unwrap_or("")))
+            .show_ui(ui, |ui: &mut Ui| {
+                for category in known_categories {
+                    ui.selectable_value(
+                        &mut self.manual,
+                        Some(category.clone()),
+                        regular(category),
+                    );
+                }
+            })
+            .response
+            .rect;
+        // derived takes precedence, so we strike through the label again
+        if self.derived.is_some() && self.manual.is_some() {
+            ui.painter().hline(
+                rect.x_range(),
+                rect.center().y,
+                egui::Stroke::new(2.0, Color32::BLACK),
+            );
+        }
+        if let Annotation {
+            manual: Some(_),
+            derived: Some(hstring),
+            ..
+        } = self
+        {
+            hstring.ui(ui, minimap);
+        }
     }
 }
 
@@ -504,13 +502,26 @@ impl Minimap {
     }
 }
 
-#[derive(Default)]
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     rules: Vec<Rule>,
+    account_name: String,
     known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+            rules: Default::default(),
+            account_name: "assets".to_string(),
+            known_categories: Default::default(),
+            hints: Default::default(),
+            minimap: Default::default(),
+        }
+    }
 }
 
 impl App {
@@ -525,47 +536,42 @@ impl App {
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         let mut result = {
-            let data = parse_mt940_file(
+            let mut r: Self = Default::default();
+            r.rules = vec![
+                Rule::complete(
+                    Condition::Plain(Comparison {
+                        field: Field::Purpose,
+                        ctype: ComparisonType::Contains,
+                        value: "MINT".to_string(),
+                    }),
+                    "A".to_string(),
+                ),
+                Rule::complete(
+                    Condition::Plain(Comparison {
+                        field: Field::Purpose,
+                        ctype: ComparisonType::Contains,
+                        value: "spezifiziert".to_string(),
+                    }),
+                    "B".to_string(),
+                ),
+                Rule::complete(
+                    Condition::Plain(Comparison {
+                        field: Field::Purpose,
+                        ctype: ComparisonType::Contains,
+                        value: "Buchung".to_string(),
+                    }),
+                    "C".to_string(),
+                ),
+            ];
+            r.data = Arc::new(Mutex::new(parse_mt940_file(
                 // This example file is from
                 // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
                 include_bytes!("../sample_data/mt940.sta"),
-            );
-            Self {
-                data: Arc::new(Mutex::new(data)),
-                //rules: serde_json::from_slice(include_bytes!("../rules.json")).unwrap(),
-                rules: vec![
-                    Rule::complete(
-                        Condition::Plain(Comparison {
-                            field: Field::Purpose,
-                            ctype: ComparisonType::Contains,
-                            value: "MINT".to_string(),
-                        }),
-                        "A".to_string(),
-                    ),
-                    Rule::complete(
-                        Condition::Plain(Comparison {
-                            field: Field::Purpose,
-                            ctype: ComparisonType::Contains,
-                            value: "spezifiziert".to_string(),
-                        }),
-                        "B".to_string(),
-                    ),
-                    Rule::complete(
-                        Condition::Plain(Comparison {
-                            field: Field::Purpose,
-                            ctype: ComparisonType::Contains,
-                            value: "Buchung".to_string(),
-                        }),
-                        "C".to_string(),
-                    ),
-                ],
-                hints: Default::default(),
-                minimap: Default::default(),
-                known_categories: Default::default(),
-            }
+            )));
+            r
         };
         #[cfg(not(feature = "demo"))]
-        let mut result: App = { Default::default() };
+        let mut result: App = Default::default();
         result.update_annotations();
         result
     }
@@ -845,11 +851,29 @@ impl App {
                                         });
                                         // annotation
                                         row.col(|ui| {
-                                            entry.annotation.ui(
-                                                ui,
-                                                &self.known_categories,
-                                                &mut self.minimap,
-                                            );
+                                            ui.horizontal(|ui| {
+                                                if entry.money.inner.credit {
+                                                    entry.annotation.ui(
+                                                        ui,
+                                                        &self.known_categories,
+                                                        &mut self.minimap,
+                                                    );
+                                                    ui.label(regular(&format!(
+                                                        "→ {}",
+                                                        self.account_name
+                                                    )));
+                                                } else {
+                                                    ui.label(regular(&format!(
+                                                        "{} →",
+                                                        self.account_name
+                                                    )));
+                                                    entry.annotation.ui(
+                                                        ui,
+                                                        &self.known_categories,
+                                                        &mut self.minimap,
+                                                    );
+                                                }
+                                            });
                                         });
                                     });
                                 }
