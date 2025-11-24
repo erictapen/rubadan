@@ -527,9 +527,8 @@ impl App {
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
-        let mut result = {
-            let mut r: Self = Default::default();
-            r.rules = vec![
+        let mut result = Self {
+            rules: vec![
                 Rule::complete(
                     Condition::Plain(Comparison {
                         field: Field::Purpose,
@@ -554,13 +553,13 @@ impl App {
                     }),
                     "C".to_string(),
                 ),
-            ];
-            r.data = Arc::new(Mutex::new(parse_mt940_file(
+            ],
+            data: Arc::new(Mutex::new(parse_mt940_file(
                 // This example file is from
                 // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
                 include_bytes!("../sample_data/mt940.sta"),
-            )));
-            r
+            ))),
+            ..Default::default()
         };
         #[cfg(not(feature = "demo"))]
         let mut result: App = Default::default();
@@ -1162,15 +1161,13 @@ impl Rule {
         }
     }
     fn to_delete(&self) -> bool {
-        if let Self::Complete {
-            delete: ButtonState::Active,
-            ..
-        } = self
-        {
-            true
-        } else {
-            false
-        }
+        matches!(
+            self,
+            Self::Complete {
+                delete: ButtonState::Active,
+                ..
+            }
+        )
     }
     fn ui(
         &mut self,
