@@ -152,14 +152,6 @@ fn symbol(text: &str) -> RichText {
     RichText::new(text).family(family)
 }
 
-fn symbol_bold(text: &str) -> RichText {
-    #[cfg(feature = "egui_parley")]
-    let family = FontFamily::Named("Noto Sans Symbols2 Bold".into());
-    #[cfg(feature = "egui_latest")]
-    let family = FontFamily::Name("Noto Sans Symbols2 Bold".into());
-    RichText::new(text).family(family)
-}
-
 fn parse_mt940_file(bytes: &[u8]) -> Vec<DataRow> {
     let file_str = &String::from_utf8(bytes.to_vec()).unwrap();
     if file_str.contains(":61:220229") {
@@ -971,7 +963,7 @@ impl App {
 
                                 // If the rule itself is being dragged we draw a tooltip at the cursor
                                 // FIXME for some reason this adds a newline like gap after the rule
-                                if dragged {
+                                if dragged == ButtonState::Active {
                                     let tooltip_layer_id = egui::LayerId::new(
                                         egui::Order::Tooltip,
                                         format!("rule{}", i).into(),
@@ -1123,8 +1115,8 @@ enum Rule {
         condition: Condition,
         category: String,
         hovered: bool,
-        dragged: bool,
-        delete: Delete,
+        dragged: ButtonState,
+        delete: ButtonState,
     },
     Incomplete {
         condition: Condition,
@@ -1141,7 +1133,7 @@ impl Rule {
             condition,
             category,
             hovered: false,
-            dragged: false,
+            dragged: Default::default(),
             delete: Default::default(),
         }
     }
@@ -1171,7 +1163,7 @@ impl Rule {
     }
     fn to_delete(&self) -> bool {
         if let Self::Complete {
-            delete: Delete::Delete,
+            delete: ButtonState::Active,
             ..
         } = self
         {
@@ -1259,7 +1251,7 @@ impl Rule {
 
             Rule::Complete {
                 ref mut enabled,
-                mut dragged,
+                ref mut dragged,
                 ref mut hovered,
                 ref mut condition,
                 ref mut delete,
@@ -1268,20 +1260,33 @@ impl Rule {
             } => {
                 let response = ui.horizontal_top(|ui| {
                     // When being dragged we render the rule in a more subtle color
-                    let color = match (&*enabled, dragged) {
-                        (false, _) | (_, true) => Color32::GRAY,
-                        (_, false) => Color32::PLACEHOLDER,
+                    let color = match (&*enabled, &*dragged) {
+                        (false, _) | (_, ButtonState::Active) => Color32::GRAY,
+                        _ => Color32::PLACEHOLDER,
                     };
 
-                    let mut r = ui.add(Label::new(if *hovered {
-                        symbol(GRIP_SYMBOL).color(Color32::DARK_GRAY)
-                    } else {
-                        symbol(GRIP_SYMBOL).color(Color32::TRANSPARENT)
-                    }));
+                    // grip handle for drag & drop
+                    let mut r = {
+                        let color = if *dragged == ButtonState::Hovered {
+                            Color32::BLACK
+                        } else if *hovered {
+                            Color32::DARK_GRAY
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let grip_response = ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
+                        grip_response.dnd_set_drag_payload(rule_i);
+                        if grip_response.dragged() {
+                            *dragged = ButtonState::Active;
+                        } else {
+                            *dragged = ButtonState::from_response(&grip_response);
+                        }
+                        grip_response
+                    };
 
                     // delete button
                     {
-                        let button_color = if delete == &Delete::Hovered {
+                        let button_color = if delete == &ButtonState::Hovered {
                             Color32::BLACK
                         } else if *hovered {
                             Color32::DARK_GRAY
@@ -1291,18 +1296,9 @@ impl Rule {
                         let delete_response = ui.add(
                             Button::new(symbol(TRASH_SYMBOL).color(button_color)).frame(false),
                         );
-                        if delete_response.clicked() {
-                            *delete = Delete::Delete;
-                        } else if delete_response.hovered() {
-                            *delete = Delete::Hovered;
-                        } else {
-                            *delete = Delete::None;
-                        }
+                        *delete = ButtonState::from_response(&delete_response);
                         r |= delete_response;
                     }
-
-                    r.dnd_set_drag_payload(rule_i);
-                    dragged = r.dragged();
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |= condition.ui(ui, false, hovered_condition, color);
@@ -1340,12 +1336,24 @@ impl Rule {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
-enum Delete {
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Copy)]
+enum ButtonState {
     #[default]
     None,
     Hovered,
-    Delete,
+    Active,
+}
+
+impl ButtonState {
+    fn from_response(response: &Response) -> Self {
+        if response.clicked() {
+            ButtonState::Active
+        } else if response.hovered() {
+            ButtonState::Hovered
+        } else {
+            ButtonState::None
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
