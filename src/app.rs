@@ -496,6 +496,8 @@ impl Minimap {
 
 pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
+    /// Sync the scroll position so that the data and annotation table appear as one
+    data_vertical_scroll_offset: f32,
     rules: Vec<Rule>,
     account_name: String,
     known_categories: indexmap::IndexSet<String>,
@@ -507,6 +509,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             data: Default::default(),
+            data_vertical_scroll_offset: 0.0,
             rules: Default::default(),
             account_name: "assets".to_string(),
             known_categories: Default::default(),
@@ -701,7 +704,7 @@ impl App {
             d.insert_temp("update_annotations".into(), true);
         });
     }
-    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui, row_height_min: f32) {
+    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui, row_height: f32) {
         if ctx.input(|i| i.screen_rect().width()) > 600.0 {
             egui::SidePanel::right("minimap")
                 .resizable(false)
@@ -720,7 +723,7 @@ impl App {
 
                         for mut rect_shape in self.minimap.elements.drain(..) {
                             rect_shape.rect =
-                                rect_shape.rect.expand2([0.0, 0.5 * row_height_min].into());
+                                rect_shape.rect.expand2([0.0, 0.5 * row_height].into());
                             rect_shape.rect = transform.transform_rect(rect_shape.rect);
                             rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
                             ui.painter().add(rect_shape);
@@ -756,7 +759,9 @@ impl App {
         self.minimap.clear();
     }
     fn data_panel(&mut self, ctx: &egui::Context) {
-        let table_response = egui::TopBottomPanel::top("data_panel")
+        use egui_extras::{Column, TableBuilder};
+
+        let data_panel_response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .exact_height(ctx.screen_rect().max.y * 0.5)
@@ -765,21 +770,75 @@ impl App {
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
                 } else {
-                    // Rows should be at least as high as a button, as that is currently the limiting factor
+                    // Rows should be exactly as high as a button, as that is currently the limiting factor
                     // TODO make this not allocate space
-                    let row_height_min = ui
+                    let row_height = ui
                         .scope_builder(UiBuilder::new().invisible(), |ui| ui.button(symbol("🗙")))
                         .response
                         .rect
                         .height();
 
-                    self.minimap(ctx, ui, row_height_min);
+                    self.minimap(ctx, ui, row_height);
+
+                    let mut offset_annotations = 0.0;
+                    let mut offset_data = 0.0;
+
+                    egui::SidePanel::right("annotations_sidepanel")
+                        .resizable(false)
+                        .exact_width(200.0)
+                        .show_inside(ui, |ui| {
+                            let annotations_response = TableBuilder::new(ui)
+                                .vertical_scroll_offset(self.data_vertical_scroll_offset)
+                                // Optional: Hide when data_panel_response doesn't indicate hover
+                                .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                                .auto_shrink([false, false])
+                                .column(Column::auto())
+                                .header(20.0, |mut header| {
+                                    header.col(|ui| {
+                                        ui.label(bold("annotation"));
+                                    });
+                                })
+                                .body(|mut body| {
+                                    for entry in &mut *self.data.lock().unwrap() {
+                                        body.row(row_height, |mut row| {
+                                            // annotation
+                                            row.col(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    if entry.money.inner.credit {
+                                                        entry.annotation.ui(
+                                                            ui,
+                                                            &self.known_categories,
+                                                            &mut self.minimap,
+                                                        );
+                                                        ui.label(regular(&format!(
+                                                            "→ {}",
+                                                            self.account_name
+                                                        )));
+                                                    } else {
+                                                        ui.label(regular(&format!(
+                                                            "{} →",
+                                                            self.account_name
+                                                        )));
+                                                        entry.annotation.ui(
+                                                            ui,
+                                                            &self.known_categories,
+                                                            &mut self.minimap,
+                                                        );
+                                                    }
+                                                });
+                                            });
+                                        });
+                                    }
+                                });
+                                offset_annotations = annotations_response.state.offset.y;
+                        });
 
                     let horizontal_state = egui::ScrollArea::horizontal().show(ui, |ui| {
-                        use egui_extras::{Column, TableBuilder};
                         let table_state = TableBuilder::new(ui)
+                            .vertical_scroll_offset(self.data_vertical_scroll_offset)
+                            // Let the annotations table show a scrollbar instead
+                            .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden)
                             .auto_shrink([false, false])
-                            .column(Column::auto())
                             .column(Column::auto())
                             .column(Column::auto())
                             .column(Column::auto())
@@ -803,13 +862,10 @@ impl App {
                                 header.col(|ui| {
                                     ui.label(bold("purpose"));
                                 });
-                                header.col(|ui| {
-                                    ui.label(bold("annotation"));
-                                });
                             })
                             .body(|mut body| {
                                 for entry in &mut *self.data.lock().unwrap() {
-                                    body.row(row_height_min, |mut row| {
+                                    body.row(row_height, |mut row| {
                                         // date
                                         row.col(|ui| {
                                             entry.date.ui(ui, &mut self.minimap);
@@ -841,48 +897,30 @@ impl App {
                                                 purposeh.ui(ui, &mut self.minimap);
                                             }
                                         });
-                                        // annotation
-                                        row.col(|ui| {
-                                            ui.horizontal(|ui| {
-                                                if entry.money.inner.credit {
-                                                    entry.annotation.ui(
-                                                        ui,
-                                                        &self.known_categories,
-                                                        &mut self.minimap,
-                                                    );
-                                                    ui.label(regular(&format!(
-                                                        "→ {}",
-                                                        self.account_name
-                                                    )));
-                                                } else {
-                                                    ui.label(regular(&format!(
-                                                        "{} →",
-                                                        self.account_name
-                                                    )));
-                                                    entry.annotation.ui(
-                                                        ui,
-                                                        &self.known_categories,
-                                                        &mut self.minimap,
-                                                    );
-                                                }
-                                            });
-                                        });
                                     });
                                 }
                                 self.minimap.frame =
                                     Some(body.ui_mut().min_rect()).filter(|r| r.width() != 0.0);
                             });
+                            offset_data = table_state.state.offset.y;
+
+                            if self.data_vertical_scroll_offset != offset_data {
+                               self.data_vertical_scroll_offset = offset_data;
+                            } else if self.data_vertical_scroll_offset != offset_annotations {
+                               self.data_vertical_scroll_offset = offset_annotations;
+                            }
 
                         // For visualising which part of the minimap is visible in the data panel,
                         // we add another shape to signify scroll state
                         self.minimap.visible_rect = Some(table_state.inner_rect);
                     });
+
                     if let Some(ref mut visible_rect) = self.minimap.visible_rect {
                         *visible_rect = visible_rect.intersect(horizontal_state.inner_rect);
                     }
                 }
             });
-        if table_response.response.hovered() {
+        if data_panel_response.response.hovered() {
             self.hints.push(Hint::Transactions);
         }
     }
