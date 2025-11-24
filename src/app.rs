@@ -46,6 +46,7 @@ const THIN_SPACE: &str = "\u{2009}";
 const GRIP_SYMBOL: &str = "⠿";
 const CANCEL_SYMBOL: &str = "🗙";
 const CHECK_SYMBOL: &str = "✓";
+const TRASH_SYMBOL: &str = "🗑";
 
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
@@ -148,6 +149,14 @@ fn symbol(text: &str) -> RichText {
     let family = FontFamily::Named("Noto Sans Symbols2".into());
     #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("Noto Sans Symbols2".into());
+    RichText::new(text).family(family)
+}
+
+fn symbol_bold(text: &str) -> RichText {
+    #[cfg(feature = "egui_parley")]
+    let family = FontFamily::Named("Noto Sans Symbols2 Bold".into());
+    #[cfg(feature = "egui_latest")]
+    let family = FontFamily::Name("Noto Sans Symbols2 Bold".into());
     RichText::new(text).family(family)
 }
 
@@ -881,6 +890,9 @@ impl App {
                     let rules_len = self.rules.len();
                     let mut drop_to = None;
 
+                    // Delete rules marked as to be deleted
+                    self.rules.retain(|r| !r.to_delete());
+
                     for (i, rule) in self.rules.iter_mut().enumerate() {
                         match *rule {
                             Rule::Complete {
@@ -1087,6 +1099,7 @@ enum Rule {
         category: String,
         hovered: bool,
         dragged: bool,
+        delete: Delete,
     },
     Incomplete {
         condition: Condition,
@@ -1104,6 +1117,7 @@ impl Rule {
             category,
             hovered: false,
             dragged: false,
+            delete: Default::default(),
         }
     }
     fn incomplete(condition: Condition, category: String) -> Self {
@@ -1128,6 +1142,17 @@ impl Rule {
                 .map(|c| Self::complete(c, category.to_string()))
         } else {
             None
+        }
+    }
+    fn to_delete(&self) -> bool {
+        if let Self::Complete {
+            delete: Delete::Delete,
+            ..
+        } = self
+        {
+            true
+        } else {
+            false
         }
     }
     fn ui(
@@ -1212,6 +1237,7 @@ impl Rule {
                 mut dragged,
                 ref mut hovered,
                 ref mut condition,
+                ref mut delete,
                 ref category,
                 ..
             } => {
@@ -1227,6 +1253,29 @@ impl Rule {
                     } else {
                         symbol(GRIP_SYMBOL).color(Color32::TRANSPARENT)
                     }));
+
+                    // delete button
+                    {
+                        let button_color = if delete == &Delete::Hovered {
+                            Color32::BLACK
+                        } else if *hovered {
+                            Color32::DARK_GRAY
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let delete_response = ui.add(
+                            Button::new(symbol(TRASH_SYMBOL).color(button_color)).frame(false),
+                        );
+                        if delete_response.clicked() {
+                            *delete = Delete::Delete;
+                        } else if delete_response.hovered() {
+                            *delete = Delete::Hovered;
+                        } else {
+                            *delete = Delete::None;
+                        }
+                        r |= delete_response;
+                    }
+
                     r.dnd_set_drag_payload(rule_i);
                     dragged = r.dragged();
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
@@ -1264,6 +1313,14 @@ impl Rule {
             Rule::Incomplete { condition, .. } => condition.matches(entry),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+enum Delete {
+    #[default]
+    None,
+    Hovered,
+    Delete,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
