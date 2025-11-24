@@ -728,7 +728,8 @@ impl App {
                         let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
 
                         for mut rect_shape in self.minimap.elements.drain(..) {
-                            rect_shape.rect = rect_shape.rect.expand2([0.0, row_height_min].into());
+                            rect_shape.rect =
+                                rect_shape.rect.expand2([0.0, 0.5 * row_height_min].into());
                             rect_shape.rect = transform.transform_rect(rect_shape.rect);
                             rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
                             ui.painter().add(rect_shape);
