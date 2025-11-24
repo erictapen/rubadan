@@ -186,8 +186,8 @@ impl Renderable for Money {
             }
         };
         let sign = match self.credit {
-            true => "−",
-            false => "",
+            true => "",
+            false => "−",
         };
         let number = self.amount;
         let response = ui.label(
