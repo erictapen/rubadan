@@ -33,11 +33,12 @@ use egui::{
     Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, LayerId, Layout, Margin,
     Painter, Rect, Response, RichText, StrokeKind, Ui, UiBuilder,
 };
-use epaint::{CornerRadius, Pos2, RectShape, Vec2};
-use log::{error, info, warn};
+use epaint::{CornerRadius, Pos2, RectShape};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 use crate::widgets;
@@ -790,7 +791,7 @@ impl App {
                     let row_height = ui
                         .new_child(UiBuilder::new()
                           .invisible()
-                          .layer_id(egui::LayerId::background()))
+                          .layer_id(LayerId::background()))
                         .add(Button::new(symbol("🗙")))
                         .rect
                         .height();
@@ -800,7 +801,6 @@ impl App {
                     if let Some(edge) = ctx.data(|d| {
                         d.get_temp::<f32>("annotations_edge_for_blur".into())
                     }) {
-                        info!("edge: {edge}");
                         let rect = Rect::from_min_max([edge, -171.8].into(), [2338.0, 708.5].into());
                         let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: 20, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
                         ui.painter().add(shape);
@@ -976,7 +976,7 @@ impl App {
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             ui.add(Label::new(bold("Rules")));
             egui::ScrollArea::both()
-                .auto_shrink([false; 2])
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let dragging_pointer: Option<egui::Pos2> = ui
                         .input(|i| i.pointer.interact_pos())
@@ -1042,7 +1042,7 @@ impl App {
                                 // If the rule itself is being dragged we draw a tooltip at the cursor
                                 // FIXME for some reason this adds a newline like gap after the rule
                                 if dragged == ButtonState::Active {
-                                    let tooltip_layer_id = egui::LayerId::new(
+                                    let tooltip_layer_id = LayerId::new(
                                         egui::Order::Tooltip,
                                         format!("rule{}", i).into(),
                                     );
@@ -1086,7 +1086,6 @@ impl App {
                     if !a_rule_is_being_edited
                         && ui.add(Button::new(regular("+ Add new rule"))).clicked()
                     {
-                        info!("Pushed");
                         self.rules
                             .push(Rule::incomplete(Condition::incomplete(), "".to_string()));
                     }
@@ -1102,7 +1101,7 @@ impl App {
         }
 
         if a_rule_changed {
-            info!("At least one rule changed this frame");
+            debug!("At least one rule changed this frame");
             self.update_annotations();
         }
     }
@@ -1628,17 +1627,13 @@ impl Condition {
                         None => {
                             let r = ui
                                 .vertical(|ui| {
-                                    let r = ui.add(Button::new(regular("Name")));
-                                    if r.clicked() {
-                                        *field = Some(Field::Name);
-                                    }
-                                    let r = ui.add(Button::new(regular("Purpose")));
-                                    if r.clicked() {
-                                        *field = Some(Field::Purpose);
-                                    }
-                                    let r = ui.add(Button::new(regular("IBAN")));
-                                    if r.clicked() {
-                                        *field = Some(Field::Iban);
+                                    for field_variant in Field::iter() {
+                                        let r = ui.add(Button::new(regular(
+                                            format!("{field_variant}").as_str(),
+                                        )));
+                                        if r.clicked() {
+                                            *field = Some(field_variant);
+                                        }
                                     }
                                 })
                                 .response;
@@ -1671,21 +1666,13 @@ impl Condition {
                         None => {
                             let r = ui
                                 .vertical(|ui| {
-                                    if ui
-                                        .button(regular(
-                                            format!("{}", ComparisonType::Contains).as_str(),
-                                        ))
-                                        .clicked()
-                                    {
-                                        *ctype = Some(ComparisonType::Contains);
-                                    }
-                                    if ui
-                                        .button(regular(
-                                            format!("{}", ComparisonType::Exact).as_str(),
-                                        ))
-                                        .clicked()
-                                    {
-                                        *ctype = Some(ComparisonType::Exact);
+                                    for ctype_variant in ComparisonType::iter() {
+                                        if ui
+                                            .button(regular(format!("{ctype_variant}").as_str()))
+                                            .clicked()
+                                        {
+                                            *ctype = Some(ctype_variant);
+                                        }
                                     }
                                 })
                                 .response;
@@ -1834,7 +1821,7 @@ impl Comparison {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, EnumIter)]
 enum ComparisonType {
     #[default]
     Exact,
@@ -1854,7 +1841,7 @@ impl Display for ComparisonType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, EnumIter)]
 enum Field {
     #[default]
     Name,
