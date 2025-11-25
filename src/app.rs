@@ -538,7 +538,7 @@ impl App {
                         ctype: ComparisonType::Contains,
                         value: "MINT".to_string(),
                     }),
-                    "A".to_string(),
+                    "expenses:test".to_string(),
                 ),
                 Rule::complete(
                     Condition::Plain(Comparison {
@@ -546,7 +546,7 @@ impl App {
                         ctype: ComparisonType::Contains,
                         value: "spezifiziert".to_string(),
                     }),
-                    "B".to_string(),
+                    "income:another".to_string(),
                 ),
                 Rule::complete(
                     Condition::Plain(Comparison {
@@ -554,7 +554,7 @@ impl App {
                         ctype: ComparisonType::Contains,
                         value: "Buchung".to_string(),
                     }),
-                    "C".to_string(),
+                    "income".to_string(),
                 ),
             ],
             data: Arc::new(Mutex::new(parse_mt940_file(
@@ -825,15 +825,11 @@ impl App {
                                                             &self.known_categories,
                                                             &mut self.minimap,
                                                         );
-                                                        ui.label(regular(&format!(
-                                                            "→ {}",
-                                                            self.account_name
-                                                        )));
+                                                        ui.label(regular("→"));
+                                                        ui.label(regular( &self.account_name));
                                                     } else {
-                                                        ui.label(regular(&format!(
-                                                            "{} →",
-                                                            self.account_name
-                                                        )));
+                                                        ui.label(regular( &self.account_name));
+                                                        ui.label(regular("→"));
                                                         entry.annotation.ui(
                                                             ui,
                                                             &self.known_categories,
@@ -1298,7 +1294,9 @@ impl Rule {
                     *try_to_complete = false;
 
                     let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
-                    if complete_button_response.clicked() {
+                    if complete_button_response.clicked()
+                        || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter))
+                    {
                         *try_to_complete = true;
                     }
                     if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
@@ -1495,7 +1493,7 @@ impl Condition {
                 value,
             }) => {
                 let response = ui.add(Label::new(
-                    regular(format!("{field} {ctype} \"{value}\"").as_str()).color(color),
+                    regular(format!("{field} {ctype} “{value}”").as_str()).color(color),
                 ));
                 if response.hovered() {
                     *hovered_condition = Some(self.clone());
