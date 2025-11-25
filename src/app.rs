@@ -1276,27 +1276,30 @@ impl Rule {
                 ref mut try_to_complete,
                 ..
             } => {
+                // We collect edges to be drawn and paint them at the end
+                let mut edges = Edges::new();
+
                 ui.horizontal_top(|ui| {
                     let mut r = ui.add(Label::new(regular("When")));
+                    edges.add(r.rect, ButtonState::None);
+                    edges.commit_layer();
                     ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                    r |= condition.ui(
-                        ui,
-                        *try_to_complete,
-                        &mut None,
-                        Color32::BLACK,
-                        r.rect.right_center(),
-                    );
-                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                    r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK, &mut edges);
                     ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
                     r |= ui
                         .vertical(|ui| {
-                            ui.add(Label::new(regular("then mark as")));
-                            if ui.add(Button::new(regular("and…"))).clicked() {
+                            let r = ui.add(Label::new(regular("then mark as")));
+                            edges.add(r.rect, ButtonState::Active);
+                            let r = ui.add(Button::new(regular("and…")));
+                            if r.clicked() {
                                 *condition = condition.clone().and_incomplete();
                             }
-                            if ui.add(Button::new(regular("or…"))).clicked() {
+                            edges.add(r.rect, ButtonState::from_response(&r));
+                            let r = ui.add(Button::new(regular("or…")));
+                            if r.clicked() {
                                 *condition = condition.clone().or_incomplete();
                             }
+                            edges.add(r.rect, ButtonState::from_response(&r));
                         })
                         .response;
                     let text_edit_category_response =
@@ -1346,6 +1349,10 @@ impl Rule {
                         ));
                     }
                     r |= complete_button_response;
+
+                    let mut painter = ui.painter_at(r.rect);
+                    edges.paint(&mut painter);
+
                     r
                 })
             }
@@ -1406,7 +1413,7 @@ impl Rule {
 
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |=
-                        condition.ui(ui, false, hovered_condition, color, Default::default());
+                        condition.ui(ui, false, hovered_condition, color, &mut Edges::new());
                     rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
                     rule_text |= ui.add(Label::new(regular(category).color(color)));
                     if !*enabled {
@@ -1459,7 +1466,7 @@ impl Display for Rule {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, PartialOrd, Copy, Eq, Ord)]
 enum ButtonState {
     #[default]
     None,
@@ -1564,7 +1571,7 @@ impl Condition {
         try_to_complete: bool,
         hovered_condition: &mut Option<Condition>,
         color: Color32,
-        start_point: Pos2,
+        edges: &mut Edges,
     ) -> Response {
         match self {
             Self::Plain(Comparison {
@@ -1586,61 +1593,6 @@ impl Condition {
                 value,
                 ..
             } => {
-                #[derive(Default)]
-                struct Curves {
-                    open_points: Vec<(Pos2, bool)>,
-                    open_knot: Option<Pos2>,
-                    one_to_many: bool,
-                    curves: Vec<(Pos2, Pos2, bool)>,
-                }
-
-                impl Curves {
-                    fn from_knot(knot: Pos2) -> Self {
-                        Self {
-                            open_knot: Some(knot),
-                            one_to_many: true,
-                            ..Default::default()
-                        }
-                    }
-                    fn add_open_point(&mut self, point: Pos2, hovered: bool) {
-                        if hovered {
-                            self.open_points.push((point, hovered));
-                        } else {
-                            self.open_points.insert(0, (point, hovered));
-                        }
-                    }
-                    fn commit_open(&mut self) -> bool {
-                        if let Some(open_knot) = self.open_knot {
-                            if self.one_to_many {
-                                for (op, hovered) in self.open_points.iter() {
-                                    self.curves.push((open_knot, *op, *hovered));
-                                }
-                            } else {
-                                for (op, hovered) in self.open_points.iter() {
-                                    self.curves.push((*op, open_knot, *hovered));
-                                }
-                            }
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    fn paint(self, painter: &Painter) {
-                        for (from, to, hovered) in self.curves {
-                            painter.add(epaint::CubicBezierShape::from_points_stroke(
-                                [from, Pos2::new(to.x, from.y), Pos2::new(from.x, to.y), to],
-                                false,
-                                Color32::TRANSPARENT,
-                                if hovered {
-                                    egui::Stroke::new(4.0, Color32::BLUE)
-                                } else {
-                                    egui::Stroke::new(2.0, Color32::LIGHT_GRAY)
-                                },
-                            ));
-                        }
-                    }
-                }
-
                 let mut r;
 
                 // field
@@ -1657,7 +1609,9 @@ impl Condition {
                                         if r.clicked() {
                                             *field = Some(field_variant);
                                         }
+                                        edges.add(r.rect, ButtonState::from_response(&r));
                                     }
+                                    edges.commit_layer();
                                 })
                                 .response;
                             missing_value_indicator(
@@ -1674,12 +1628,24 @@ impl Condition {
                                 set_field_to_none = true;
                             }
                             r |= ui.add(Label::new(regular(format!("{selected_field}").as_str())));
+                            edges.add(r.rect, ButtonState::Active);
+                            edges.commit_layer();
                             r
                         }
                     };
                     if set_field_to_none {
                         *field = None;
                     }
+                }
+                // Add an intermediate knot for the edges to avoid a many -> many
+                {
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                    edges.add(
+                        Rect::from_pos(r.rect.right_center() + Vec2::new(MIN_CURVE_WIDTH, 0.0)),
+                        Default::default(),
+                    );
+                    edges.commit_layer();
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
                 }
 
                 // ctype
@@ -1690,13 +1656,14 @@ impl Condition {
                             let r = ui
                                 .vertical(|ui| {
                                     for ctype_variant in ComparisonType::iter() {
-                                        if ui
-                                            .button(regular(format!("{ctype_variant}").as_str()))
-                                            .clicked()
-                                        {
+                                        let r =
+                                            ui.button(regular(format!("{ctype_variant}").as_str()));
+                                        if r.clicked() {
                                             *ctype = Some(ctype_variant);
                                         }
+                                        edges.add(r.rect, ButtonState::from_response(&r));
                                     }
+                                    edges.commit_layer();
                                 })
                                 .response;
                             missing_value_indicator(
@@ -1713,6 +1680,8 @@ impl Condition {
                                 set_ctype_to_none = true;
                             }
                             r |= ui.add(Label::new(regular(format!("{selected_ctype}").as_str())));
+                            edges.add(r.rect, ButtonState::Active);
+                            edges.commit_layer();
                             r
                         }
                     };
@@ -1720,6 +1689,8 @@ impl Condition {
                         *ctype = None;
                     }
                 }
+
+                ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
 
                 // value
                 {
@@ -1733,14 +1704,24 @@ impl Condition {
                             try_to_complete,
                         );
                     }
+
+                    edges.add(text_edit_response.rect, Default::default());
+                    edges.commit_layer();
+
                     r |= text_edit_response;
                 }
                 r
             }
             Self::Boolean(c1, c2, op) => {
-                let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, start_point);
-                r |= ui.add(Label::new(regular(format!("{op}").as_str())));
-                r |= c2.ui(ui, try_to_complete, hovered_condition, color, start_point);
+                let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, edges);
+                // Commit an empty layer to break the edges
+                edges.commit_layer();
+                let op_response = ui.add(Label::new(regular(format!("{op}").as_str())));
+                edges.add(op_response.rect, ButtonState::None);
+                edges.commit_layer();
+                ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                r |= op_response;
+                r |= c2.ui(ui, try_to_complete, hovered_condition, color, edges);
                 r
             }
         }
@@ -1761,6 +1742,131 @@ impl Display for Condition {
             Self::Boolean(c1, c2, BooleanOp::And) => write!(f, "{c1} and {c2}"),
             Self::Boolean(c1, c2, BooleanOp::Or) => write!(f, "{c1} or {c2}"),
             Self::Incomplete { .. } => unimplemented!(),
+        }
+    }
+}
+
+/// An intermediate representation to record all edges and paint them later
+#[derive(Debug)]
+struct Edges(Vec<Vec<(Rect, ButtonState)>>);
+
+impl Edges {
+    fn new() -> Self {
+        Self(vec![vec![]])
+    }
+    /// Add a node to the current layer
+    fn add(&mut self, node: Rect, state: ButtonState) {
+        if let Some(current_layer) = self.0.last_mut() {
+            current_layer.push((node, state));
+        }
+    }
+    /// Finish the current layer, make it read-only and start a new one
+    fn commit_layer(&mut self) {
+        self.0.push(Vec::new());
+    }
+    /// Paint all layers
+    fn paint(self, painter: &mut Painter) {
+        use egui::Order;
+
+        // We wanna paint curves in order of dominance
+        let none_layer = LayerId::new(Order::Background, "none".into());
+        let hovered_layer = LayerId::new(Order::Middle, "hovered".into());
+        let active_layer = LayerId::new(Order::Foreground, "active".into());
+
+        // Visual gap between element and the curve
+        // We don't apply it when a layer consists of a single very small node
+        let gap = Vec2::new(10.0, 0.0);
+
+        // Helper function to do the low level curve painting
+        let curve = |painter: &mut Painter, from: Pos2, to: Pos2, state: ButtonState| {
+            let (stroke, layer) = match state {
+                ButtonState::None => (egui::Stroke::new(2.0, Color32::LIGHT_GRAY), none_layer),
+                ButtonState::Hovered => {
+                    (egui::Stroke::new(4.0, Color32::LIGHT_BLUE), hovered_layer)
+                }
+                ButtonState::Active => (egui::Stroke::new(4.0, Color32::BLUE), active_layer),
+            };
+
+            painter.set_layer_id(layer);
+            painter.add(epaint::CubicBezierShape::from_points_stroke(
+                [from, Pos2::new(to.x, from.y), Pos2::new(from.x, to.y), to],
+                false,
+                Color32::TRANSPARENT,
+                stroke,
+            ));
+        };
+
+        for window in self.0.windows(2) {
+            let (from, to) = (&window[0], &window[1]);
+
+            // 1 -> 1
+            if from.len() == 1 && to.len() == 1 {
+                let (from, from_state) = from[0];
+                let (to, to_state) = to[0];
+                curve(
+                    painter,
+                    from.right_center()
+                        + if from.width() > 1.0 {
+                            gap
+                        } else {
+                            Default::default()
+                        },
+                    to.left_center()
+                        - if to.width() > 1.0 {
+                            gap
+                        } else {
+                            Default::default()
+                        },
+                    std::cmp::max(from_state, to_state),
+                );
+            }
+            // 1 -> many
+            else if from.len() == 1 && !to.is_empty() {
+                let (from, from_state) = from[0];
+                for to in to {
+                    let (to, to_state) = to;
+                    curve(
+                        painter,
+                        from.right_center()
+                            + if from.width() > 1.0 {
+                                gap
+                            } else {
+                                Default::default()
+                            },
+                        to.left_center() - gap,
+                        std::cmp::max(from_state, *to_state),
+                    );
+                }
+            }
+            // many -> 1
+            else if to.len() == 1 && !from.is_empty() {
+                let (to, to_state) = to[0];
+                for from in from {
+                    let (from, from_state) = from;
+                    curve(
+                        painter,
+                        from.right_center() + gap,
+                        to.left_center()
+                            + if to.width() > 1.0 {
+                                gap
+                            } else {
+                                Default::default()
+                            },
+                        std::cmp::max(*from_state, to_state),
+                    );
+                }
+            }
+            // 0 -> n or n -> 0, this is fine, we just don't paint anything
+            else if from.is_empty() || to.is_empty() {
+            }
+            // many -> many, not fine
+            else {
+                unimplemented!(
+                    "Edges doesn't support many -> many, but you tried a {} to {}. Put an intermediate layer with one element to visualise these.",
+                    from.len(),
+                    to.len()
+                );
+            }
         }
     }
 }
