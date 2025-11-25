@@ -362,7 +362,7 @@ impl Annotation {
                 self.manual = None;
             };
         }
-        let rect = egui::ComboBox::from_label("Annotate by hand")
+        let rect = egui::ComboBox::from_label("")
             .width(0.0)
             .icon(|_, _, _, _| {})
             .selected_text(regular(self.category().as_deref().unwrap_or("")))
@@ -783,6 +783,9 @@ impl App {
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y / PHI)
             .show(ctx, |ui| {
+
+                ui.spacing_mut().item_spacing.y = 0.0;
+
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
                 } else {
@@ -801,7 +804,7 @@ impl App {
                     if let Some(edge) = ctx.data(|d| {
                         d.get_temp::<f32>("annotations_edge_for_blur".into())
                     }) {
-                        let rect = Rect::from_min_max([edge, -171.8].into(), [2338.0, 708.5].into());
+                        let rect = Rect::from_min_max([edge, f32::MIN].into(), [f32::MAX, f32::MAX].into());
                         let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: 20, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
                         ui.painter().add(shape);
                     }
