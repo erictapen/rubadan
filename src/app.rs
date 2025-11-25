@@ -30,10 +30,10 @@ use std::fmt::Display;
 
 use egui::text_edit::TextEdit;
 use egui::{
-    Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, Layout, Margin, Rect,
-    Response, RichText, StrokeKind, Ui, UiBuilder,
+    Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, LayerId, Layout, Margin,
+    Painter, Rect, Response, RichText, StrokeKind, Ui, UiBuilder,
 };
-use epaint::{CornerRadius, RectShape};
+use epaint::{CornerRadius, Pos2, RectShape, Vec2};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -1117,6 +1117,9 @@ const TRANSACTIONS_HEIGHT_MIN: f32 = 270.0;
 /// The fixed height of the context bar
 const BOTTOM_BAR_HEIGHT: f32 = 25.0;
 
+/// Width of curve segments that are used to explain the AST of rules while creating them
+const CURVE_WIDTH: f32 = 50.0;
+
 impl eframe::App for App {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
 
@@ -1262,7 +1265,13 @@ impl Rule {
             } => {
                 ui.horizontal_top(|ui| {
                     let mut r = ui.add(Label::new(regular("When")));
-                    r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK);
+                    r |= condition.ui(
+                        ui,
+                        *try_to_complete,
+                        &mut None,
+                        Color32::BLACK,
+                        r.rect.right_center(),
+                    );
                     r |= ui.add(Label::new(regular("then mark as")));
                     let text_edit_category_response =
                         ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
@@ -1367,7 +1376,8 @@ impl Rule {
                     }
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
-                    rule_text |= condition.ui(ui, false, hovered_condition, color);
+                    rule_text |=
+                        condition.ui(ui, false, hovered_condition, color, Default::default());
                     rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
                     rule_text |= ui.add(Label::new(regular(category).color(color)));
                     if !*enabled {
@@ -1482,12 +1492,14 @@ impl Condition {
         }
     }
     /// try_to_complete: only relevant for Incomplete rules
+    /// start_point: only relevant for Incomplete rules
     fn ui(
         &mut self,
         ui: &mut Ui,
         try_to_complete: bool,
         hovered_condition: &mut Option<Condition>,
         color: Color32,
+        start_point: Pos2,
     ) -> Response {
         match self {
             Self::Plain(Comparison {
@@ -1509,6 +1521,61 @@ impl Condition {
                 value,
                 ..
             } => {
+                #[derive(Default)]
+                struct Curves {
+                    open_points: Vec<(Pos2, bool)>,
+                    open_knot: Option<Pos2>,
+                    one_to_many: bool,
+                    curves: Vec<(Pos2, Pos2, bool)>,
+                }
+
+                impl Curves {
+                    fn from_knot(knot: Pos2) -> Self {
+                        Self {
+                            open_knot: Some(knot),
+                            one_to_many: true,
+                            ..Default::default()
+                        }
+                    }
+                    fn add_open_point(&mut self, point: Pos2, hovered: bool) {
+                        if hovered {
+                            self.open_points.push((point, hovered));
+                        } else {
+                            self.open_points.insert(0, (point, hovered));
+                        }
+                    }
+                    fn commit_open(&mut self) -> bool {
+                        if let Some(open_knot) = self.open_knot {
+                            if self.one_to_many {
+                                for (op, hovered) in self.open_points.iter() {
+                                    self.curves.push((open_knot, *op, *hovered));
+                                }
+                            } else {
+                                for (op, hovered) in self.open_points.iter() {
+                                    self.curves.push((*op, open_knot, *hovered));
+                                }
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    fn paint(self, painter: &Painter) {
+                        for (from, to, hovered) in self.curves {
+                            painter.add(epaint::CubicBezierShape::from_points_stroke(
+                                [from, Pos2::new(to.x, from.y), Pos2::new(from.x, to.y), to],
+                                false,
+                                Color32::TRANSPARENT,
+                                if hovered {
+                                    egui::Stroke::new(4.0, Color32::BLUE)
+                                } else {
+                                    egui::Stroke::new(2.0, Color32::LIGHT_GRAY)
+                                },
+                            ));
+                        }
+                    }
+                }
+
                 let mut r;
 
                 // field
@@ -1518,13 +1585,16 @@ impl Condition {
                         None => {
                             let r = ui
                                 .vertical(|ui| {
-                                    if ui.add(Button::new(regular("Name"))).clicked() {
+                                    let r = ui.add(Button::new(regular("Name")));
+                                    if r.clicked() {
                                         *field = Some(Field::Name);
                                     }
-                                    if ui.add(Button::new(regular("Purpose"))).clicked() {
+                                    let r = ui.add(Button::new(regular("Purpose")));
+                                    if r.clicked() {
                                         *field = Some(Field::Purpose);
                                     }
-                                    if ui.add(Button::new(regular("IBAN"))).clicked() {
+                                    let r = ui.add(Button::new(regular("IBAN")));
+                                    if r.clicked() {
                                         *field = Some(Field::Iban);
                                     }
                                 })
