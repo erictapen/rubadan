@@ -33,7 +33,7 @@ use egui::{
     Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, LayerId, Layout, Margin,
     Painter, Rect, Response, RichText, StrokeKind, Ui, UiBuilder,
 };
-use epaint::{CornerRadius, Pos2, RectShape};
+use epaint::{CornerRadius, Pos2, RectShape, Vec2};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -620,11 +620,10 @@ impl App {
         let available_size = ui.max_rect().size();
         // Where we'll paint the widget at
         let target_rect = Rect::from_min_size(
-            [
+            Pos2::new(
                 available_size.x / 2.0 - widget_size.x / 2.0,
                 available_size.y / 2.0 - widget_size.y / 2.0,
-            ]
-            .into(),
+            ),
             widget_size,
         );
         let (hovering, dropped_file) = ctx.input(|i| {
@@ -740,13 +739,13 @@ impl App {
                             // Expand the lines so that the gaps are closed
                             rect_shape.rect = rect_shape
                                 .rect
-                                .expand2([0.0, (row_height - rect_shape.rect.height())].into());
+                                .expand2(Vec2::new(0.0, row_height - rect_shape.rect.height()));
                             rect_shape.rect = transform.transform_rect(rect_shape.rect);
-                            rect_shape.rect = rect_shape.rect.translate([0.0, -y_offset].into());
+                            rect_shape.rect = rect_shape.rect.translate(Vec2::new(0.0, -y_offset));
                             ui.painter().add(rect_shape);
                         }
 
-                        visible_rect = visible_rect.translate([0.0, -y_offset].into());
+                        visible_rect = visible_rect.translate(Vec2::new(0.0, -y_offset));
                         ui.painter().add(epaint::RectShape::filled(
                             visible_rect,
                             epaint::CornerRadius::same(5),
@@ -804,7 +803,7 @@ impl App {
                     if let Some(edge) = ctx.data(|d| {
                         d.get_temp::<f32>("annotations_edge_for_blur".into())
                     }) {
-                        let rect = Rect::from_min_max([edge, f32::MIN].into(), [f32::MAX, f32::MAX].into());
+                        let rect = Rect::from_min_max(Pos2::new(edge, f32::MIN), Pos2::new(f32::MAX, f32::MAX));
                         let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: 20, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
                         ui.painter().add(shape);
                     }
@@ -865,6 +864,11 @@ impl App {
 
 
                     let horizontal_output = egui::ScrollArea::horizontal().show(ui, |ui| {
+
+                        // For some reason both the annotations and minimap SidePanel are shifted
+                        // 5px downwards, so we hackily counter this by moving the data table too…
+                        ui.allocate_space(Vec2::new(0.0, 5.0));
+
                         let table_state = TableBuilder::new(ui)
                             .vertical_scroll_offset(self.data_vertical_scroll_offset)
                             // Let the annotations table show a scrollbar instead
