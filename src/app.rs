@@ -51,6 +51,8 @@ const TRASH_SYMBOL: &str = "🗑";
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
 
+const PHI: f32 = 1.6180339887498949;
+
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
 
@@ -766,8 +768,7 @@ impl App {
         let data_panel_response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
-            .exact_height(ctx.screen_rect().max.y * 0.5)
-            .default_height(ctx.screen_rect().max.y * 0.5)
+            .default_height(ctx.screen_rect().max.y / PHI)
             .show(ctx, |ui| {
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
@@ -1109,7 +1110,7 @@ impl App {
 }
 
 /// The minimal allowed height of the transactions panel
-const TRANSACTIONS_HEIGHT_MIN: f32 = 50.0;
+const TRANSACTIONS_HEIGHT_MIN: f32 = 270.0;
 
 /// The fixed height of the context bar
 const BOTTOM_BAR_HEIGHT: f32 = 25.0;
