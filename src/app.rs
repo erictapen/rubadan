@@ -1053,18 +1053,13 @@ impl App {
                                         egui::Order::Tooltip,
                                         format!("rule{}", i).into(),
                                     );
-                                    let egui::InnerResponse { inner: _, response } = ui
-                                        .scope_builder(
+                                    let response = ui
+                                        .new_child(
                                             egui::UiBuilder::new().layer_id(tooltip_layer_id),
-                                            |ui| {
-                                                ui.add(Label::new(regular(
-                                                    format!("dragging placeholder for rule {i}")
-                                                        .as_str(),
-                                                )));
-                                            },
-                                        );
+                                        )
+                                        .add(Label::new(regular(format!("{rule}").as_str())));
                                     if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
-                                        let delta = pointer_pos - response.rect.center();
+                                        let delta = pointer_pos - response.rect.left_center();
                                         ui.ctx().transform_layer_shapes(
                                             tooltip_layer_id,
                                             emath::TSTransform::from_translation(delta),
@@ -1136,7 +1131,7 @@ const TRANSACTIONS_HEIGHT_MIN: f32 = 270.0;
 const BOTTOM_BAR_HEIGHT: f32 = 25.0;
 
 /// Width of curve segments that are used to explain the AST of rules while creating them
-const CURVE_WIDTH: f32 = 50.0;
+const MIN_CURVE_WIDTH: f32 = 50.0;
 
 impl eframe::App for App {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
@@ -1194,7 +1189,7 @@ impl Hint {
     }
 }
 
-/// When purpose contains "Cafe" then it is "expenses:4650bewirtungskosten"
+/// When purpose contains "Cafe" then mark as "expenses:4650bewirtungskosten"
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Rule {
     Complete {
@@ -1283,6 +1278,7 @@ impl Rule {
             } => {
                 ui.horizontal_top(|ui| {
                     let mut r = ui.add(Label::new(regular("When")));
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
                     r |= condition.ui(
                         ui,
                         *try_to_complete,
@@ -1290,6 +1286,8 @@ impl Rule {
                         Color32::BLACK,
                         r.rect.right_center(),
                     );
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
                     r |= ui
                         .vertical(|ui| {
                             ui.add(Label::new(regular("then mark as")));
@@ -1439,6 +1437,24 @@ impl Rule {
                 enabled, condition, ..
             } => *enabled && condition.matches(entry),
             Rule::Incomplete { condition, .. } => condition.matches(entry),
+        }
+    }
+}
+
+/// Some basic string representaton for drag&drop preview
+impl Display for Rule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Complete {
+                category,
+                condition,
+                ..
+            } => write!(f, "When {condition} then mark as {category}"),
+            Self::Incomplete {
+                category,
+                condition,
+                ..
+            } => write!(f, "When {condition} then mark as {category}"),
         }
     }
 }
@@ -1737,6 +1753,18 @@ impl Default for Condition {
     }
 }
 
+/// Some basic string representaton for drag&drop preview
+impl Display for Condition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plain(c) => write!(f, "{c}"),
+            Self::Boolean(c1, c2, BooleanOp::And) => write!(f, "{c1} and {c2}"),
+            Self::Boolean(c1, c2, BooleanOp::Or) => write!(f, "{c1} or {c2}"),
+            Self::Incomplete { .. } => unimplemented!(),
+        }
+    }
+}
+
 fn animate_color_pulse(
     ctx: &Context,
     id: Id,
@@ -1825,6 +1853,18 @@ impl Comparison {
             ComparisonType::NotExact => *data != self.value,
             ComparisonType::NotContains => !data.contains(&self.value),
         }
+    }
+}
+
+/// Some basic string representaton for drag&drop preview
+impl Display for Comparison {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Comparison {
+            field,
+            ctype,
+            value,
+        } = self;
+        write!(f, "{field} {ctype} “{value}”")
     }
 }
 
