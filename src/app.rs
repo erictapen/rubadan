@@ -51,7 +51,7 @@ const TRASH_SYMBOL: &str = "🗑";
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
 
-const PHI: f32 = 1.6180339887498949;
+const PHI: f32 = 1.618_034;
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -773,11 +773,13 @@ impl App {
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_button(ctx, ui);
                 } else {
-                    // Rows should be exactly as high as a button, as that is currently the limiting factor
-                    // TODO make this not allocate space
+                    // Rows should be exactly as high as a button, as that is currently the
+                    // limiting factor, so we premeasure it in an invisible pass
                     let row_height = ui
-                        .scope_builder(UiBuilder::new().invisible(), |ui| ui.button(symbol("🗙")))
-                        .response
+                        .new_child(UiBuilder::new()
+                          .invisible()
+                          .layer_id(egui::LayerId::background()))
+                        .add(Button::new(symbol("🗙")))
                         .rect
                         .height();
 
