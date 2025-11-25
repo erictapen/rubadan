@@ -810,7 +810,7 @@ impl App {
                                 .column(Column::auto())
                                 .header(20.0, |mut header| {
                                     header.col(|ui| {
-                                        ui.label(bold("annotation"));
+                                        ui.label(bold("Annotation"));
                                     });
                                 })
                                 .body(|mut body| {
@@ -864,21 +864,21 @@ impl App {
                             .column(Column::auto())
                             .header(20.0, |mut header| {
                                 header.col(|ui| {
-                                    ui.label(bold("date"));
+                                    ui.label(bold("Date"));
                                 });
                                 header.col(|ui| {
                                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                        ui.label(bold("amount"));
+                                        ui.label(bold("Amount"));
                                     });
                                 });
                                 header.col(|ui| {
                                     ui.label(bold("IBAN"));
                                 });
                                 header.col(|ui| {
-                                    ui.label(bold("name"));
+                                    ui.label(bold("Name"));
                                 });
                                 header.col(|ui| {
-                                    ui.label(bold("purpose"));
+                                    ui.label(bold("Purpose"));
                                 });
                             })
                             .body(|mut body| {
@@ -963,7 +963,7 @@ impl App {
         let mut hovered_condition: Option<Condition> = None;
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add(Label::new(bold("rules")));
+            ui.add(Label::new(bold("Rules")));
             egui::ScrollArea::both()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
