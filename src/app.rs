@@ -62,6 +62,10 @@ fn load_fonts(ctx: &egui::Context) {
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Regular.otf")).into(),
     );
     fonts.font_data.insert(
+        "IBM Plex Sans Italic".to_owned(),
+        FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Italic.otf")).into(),
+    );
+    fonts.font_data.insert(
         "IBM Plex Sans Bold".to_owned(),
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Bold.otf")).into(),
     );
@@ -143,6 +147,14 @@ fn bold(text: &str) -> RichText {
     let family = FontFamily::Named("IBM Plex Sans Bold".into());
     #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("IBM Plex Sans Bold".into());
+    RichText::new(text).family(family)
+}
+
+fn italic(text: &str) -> RichText {
+    #[cfg(feature = "egui_parley")]
+    let family = FontFamily::Named("IBM Plex Sans Italic".into());
+    #[cfg(feature = "egui_latest")]
+    let family = FontFamily::Name("IBM Plex Sans Italic".into());
     RichText::new(text).family(family)
 }
 
@@ -1272,7 +1284,17 @@ impl Rule {
                         Color32::BLACK,
                         r.rect.right_center(),
                     );
-                    r |= ui.add(Label::new(regular("then mark as")));
+                    r |= ui
+                        .vertical(|ui| {
+                            ui.add(Label::new(regular("then mark as")));
+                            if ui.add(Button::new(regular("and…"))).clicked() {
+                                *condition = condition.clone().and_incomplete();
+                            }
+                            if ui.add(Button::new(regular("or…"))).clicked() {
+                                *condition = condition.clone().or_incomplete();
+                            }
+                        })
+                        .response;
                     let text_edit_category_response =
                         ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
                     if category.is_empty() {
@@ -1314,7 +1336,7 @@ impl Rule {
                     if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
                     {
                         r |= ui.add(Label::new(
-                            regular("Fill out all fields before creating the rule")
+                            italic("Fill out all fields before creating the rule")
                                 .background_color(missing_values_text_bg_color)
                                 .color(missing_values_text_color),
                         ));
@@ -1374,7 +1396,10 @@ impl Rule {
                         *delete = ButtonState::from_response(&delete_response);
                         r |= delete_response;
                     }
+
+                    // toggle switch
                     r |= ui.add(widgets::toggle_switch::toggle(enabled));
+
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |=
                         condition.ui(ui, false, hovered_condition, color, Default::default());
@@ -1432,20 +1457,26 @@ impl ButtonState {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
-enum Operand {
-    Plain,
-    Not,
+#[derive(Serialize, Deserialize, Debug, Clone, EnumIter, Default)]
+enum BooleanOp {
+    #[default]
     And,
     Or,
+}
+
+impl Display for BooleanOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::And => write!(f, "and"),
+            Self::Or => write!(f, "or"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
 enum Condition {
     Plain(Comparison),
-    Not(Box<Condition>),
-    And(Box<Condition>, Box<Condition>),
-    Or(Box<Condition>, Box<Condition>),
+    Boolean(Box<Condition>, Box<Condition>, BooleanOp),
     Incomplete {
         field: Option<Field>,
         ctype: Option<ComparisonType>,
@@ -1461,18 +1492,23 @@ impl Condition {
             value: String::new(),
         }
     }
+    fn and_incomplete(self) -> Self {
+        Self::Boolean(Box::new(self), Box::new(Self::incomplete()), BooleanOp::And)
+    }
+    fn or_incomplete(self) -> Self {
+        Self::Boolean(Box::new(self), Box::new(Self::incomplete()), BooleanOp::Or)
+    }
     fn matches(&self, entry: &DataRow) -> bool {
         match self {
             Self::Plain(comparison) => comparison.matches(entry),
-            Self::Not(comparison) => !comparison.matches(entry),
-            Self::And(c1, c2) => c1.matches(entry) && c2.matches(entry),
-            Self::Or(c1, c2) => c1.matches(entry) || c2.matches(entry),
+            Self::Boolean(c1, c2, BooleanOp::And) => c1.matches(entry) && c2.matches(entry),
+            Self::Boolean(c1, c2, BooleanOp::Or) => c1.matches(entry) || c2.matches(entry),
             Self::Incomplete { .. } => false,
         }
     }
     fn try_into_complete(&self) -> Option<Self> {
         match self {
-            Condition::Incomplete {
+            Self::Incomplete {
                 field: Some(field),
                 ctype: Some(ctype),
                 value,
@@ -1487,7 +1523,14 @@ impl Condition {
                     }))
                 }
             }
-            Condition::Incomplete { .. } => None,
+            Self::Boolean(c1, c2, op) => {
+                if let (Some(c1), Some(c2)) = (c1.try_into_complete(), c2.try_into_complete()) {
+                    Some(Self::Boolean(Box::new(c1), Box::new(c2), op.clone()))
+                } else {
+                    None
+                }
+            }
+            Self::Incomplete { .. } => None,
             c => Some(c.clone()),
         }
     }
@@ -1684,8 +1727,11 @@ impl Condition {
                 }
                 r
             }
-            _ => {
-                unimplemented!()
+            Self::Boolean(c1, c2, op) => {
+                let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, start_point);
+                r |= ui.add(Label::new(regular(format!("{op}").as_str())));
+                r |= c2.ui(ui, try_to_complete, hovered_condition, color, start_point);
+                r
             }
         }
     }
@@ -1780,8 +1826,10 @@ impl Comparison {
             }
         };
         match self.ctype {
-            ComparisonType::Contains => data.contains(&self.value),
             ComparisonType::Exact => *data == self.value,
+            ComparisonType::Contains => data.contains(&self.value),
+            ComparisonType::NotExact => *data != self.value,
+            ComparisonType::NotContains => !data.contains(&self.value),
         }
     }
 }
@@ -1791,6 +1839,8 @@ enum ComparisonType {
     #[default]
     Exact,
     Contains,
+    NotExact,
+    NotContains,
 }
 
 impl Display for ComparisonType {
@@ -1798,6 +1848,8 @@ impl Display for ComparisonType {
         match self {
             Self::Exact => write!(f, "is exactly"),
             Self::Contains => write!(f, "contains"),
+            Self::NotExact => write!(f, "is exactly not"),
+            Self::NotContains => write!(f, "contains not"),
         }
     }
 }
