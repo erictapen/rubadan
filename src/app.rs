@@ -846,10 +846,10 @@ impl App {
                     // Predraw a shadow that's going to indicate that the data table isn't scrolled
                     // entirely to the right
                     if let Some(edge) = ctx.data(|d| {
-                        d.get_temp::<f32>("annotations_edge_for_blur".into())
+                        d.get_temp::<f32>("annotations_edge_for_shadow".into())
                     }) {
                         let rect = Rect::from_min_max(Pos2::new(edge, f32::MIN), Pos2::new(f32::MAX, f32::MAX));
-                        let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: 20, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
+                        let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: SHADOW_WIDTH, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
                         ui.painter().add(shape);
                     }
 
@@ -1001,13 +1001,18 @@ impl App {
                     // If there was a need for scrolling, we render the shadow before everything
                     // next frame
                     if horizontal_output.content_size.x > horizontal_output.inner_rect.width() {
-                      ctx.data_mut(|d| {
-                          d.insert_temp("annotations_edge_for_blur".into(), sidepanel_response.response.rect.min.x);
-                      });
+                        // The remaining width before the ScrollArea is completely scrolled to the right.
+                        let remaining_right = horizontal_output.content_size.x -
+                            (horizontal_output.inner_rect.width() + horizontal_output.state.offset.x);
+                        let shadow_position = sidepanel_response.response.rect.min.x + f32::from(SHADOW_WIDTH) * (f32::max(0.0, 50.0 - remaining_right) / 50.0);
+                        ctx.data_mut(|d| {
+                            d.insert_temp("annotations_edge_for_shadow".into(), 
+                              shadow_position);
+                        });
                     } else {
-                      ctx.data_mut(|d| {
-                          d.remove_temp::<f32>("annotations_edge_for_blur".into());
-                      });
+                        ctx.data_mut(|d| {
+                            d.remove_temp::<f32>("annotations_edge_for_shadow".into());
+                        });
                     }
 
                     if let Some(ref mut visible_rect) = self.minimap.visible_rect {
@@ -1179,6 +1184,8 @@ const BOTTOM_BAR_HEIGHT: f32 = 25.0;
 
 /// Width of curve segments that are used to explain the AST of rules while creating them
 const MIN_CURVE_WIDTH: f32 = 50.0;
+
+const SHADOW_WIDTH: u8 = 20;
 
 impl eframe::App for App {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
