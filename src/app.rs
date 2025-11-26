@@ -1607,6 +1607,15 @@ impl Condition {
         color: Color32,
         edges: &mut Edges,
     ) -> Response {
+        // if let Self::Boolean {
+        //     condition1,
+        //     cancelled: true,
+        //     ..
+        // } = self
+        // {
+        //     *self = *std::mem::take(condition1);
+        // }
+
         match self {
             Self::Plain(Comparison {
                 field,
@@ -1753,6 +1762,8 @@ impl Condition {
                 op,
                 cancel_hovered,
             } => {
+                let mut cancelled = false;
+
                 // First condition
                 let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, edges);
 
@@ -1772,7 +1783,7 @@ impl Condition {
                         //Cancel button
                         let cancel_response = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
                         *cancel_hovered = cancel_response.hovered();
-                        let cancelled = cancel_response.clicked();
+                        cancelled = cancel_response.clicked();
                         r |= cancel_response;
 
                         // Operator
@@ -1787,6 +1798,11 @@ impl Condition {
                             c2.ui(ui, try_to_complete, hovered_condition, color, edges);
                         r |= second_response;
                     });
+
+                // In case we cancelled this frame we replace self with the first condition
+                if cancelled {
+                    *self = *std::mem::take(c1);
+                }
 
                 r
             }
