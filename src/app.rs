@@ -1505,7 +1505,12 @@ impl Display for BooleanOp {
 #[derive(Serialize, Deserialize, Debug, Clone, EnumIter)]
 enum Condition {
     Plain(Comparison),
-    Boolean(Box<Condition>, Box<Condition>, BooleanOp),
+    Boolean {
+        condition1: Box<Condition>,
+        condition2: Box<Condition>,
+        op: BooleanOp,
+        cancel_hovered: bool,
+    },
     Incomplete {
         field: Option<Field>,
         ctype: Option<ComparisonType>,
@@ -1521,17 +1526,35 @@ impl Condition {
             value: String::new(),
         }
     }
+    fn boolean(condition1: Condition, condition2: Condition, op: BooleanOp) -> Self {
+        Self::Boolean {
+            condition1: Box::new(condition1),
+            condition2: Box::new(condition2),
+            op,
+            cancel_hovered: false,
+        }
+    }
     fn and_incomplete(self) -> Self {
-        Self::Boolean(Box::new(self), Box::new(Self::incomplete()), BooleanOp::And)
+        Self::boolean(self, Self::incomplete(), BooleanOp::And)
     }
     fn or_incomplete(self) -> Self {
-        Self::Boolean(Box::new(self), Box::new(Self::incomplete()), BooleanOp::Or)
+        Self::boolean(self, Self::incomplete(), BooleanOp::Or)
     }
     fn matches(&self, entry: &DataRow) -> bool {
         match self {
             Self::Plain(comparison) => comparison.matches(entry),
-            Self::Boolean(c1, c2, BooleanOp::And) => c1.matches(entry) && c2.matches(entry),
-            Self::Boolean(c1, c2, BooleanOp::Or) => c1.matches(entry) || c2.matches(entry),
+            Self::Boolean {
+                condition1,
+                condition2,
+                op: BooleanOp::And,
+                ..
+            } => condition1.matches(entry) && condition2.matches(entry),
+            Self::Boolean {
+                condition1,
+                condition2,
+                op: BooleanOp::Or,
+                ..
+            } => condition1.matches(entry) || condition2.matches(entry),
             Self::Incomplete { .. } => false,
         }
     }
@@ -1552,9 +1575,17 @@ impl Condition {
                     }))
                 }
             }
-            Self::Boolean(c1, c2, op) => {
-                if let (Some(c1), Some(c2)) = (c1.try_into_complete(), c2.try_into_complete()) {
-                    Some(Self::Boolean(Box::new(c1), Box::new(c2), op.clone()))
+            Self::Boolean {
+                condition1,
+                condition2,
+                op,
+                ..
+            } => {
+                if let (Some(c1), Some(c2)) = (
+                    condition1.try_into_complete(),
+                    condition2.try_into_complete(),
+                ) {
+                    Some(Self::boolean(c1, c2, op.clone()))
                 } else {
                     None
                 }
@@ -1713,29 +1744,46 @@ impl Condition {
                 }
                 r
             }
-            Self::Boolean(c1, c2, op) => {
+            Self::Boolean {
+                condition1: c1,
+                condition2: c2,
+                op,
+                cancel_hovered,
+            } => {
                 // First condition
                 let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, edges);
 
                 // Commit an empty layer to break the edges
                 edges.commit_layer();
 
-                //Cancel button
-                let cancel_response = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
-                let cancel_hovered = cancel_response.hovered();
-                let cancelled = cancel_response.clicked();
-                r |= cancel_response;
+                // In case the Boolean gets cancelled we show the user with a frame what's going to
+                // be removed
+                Frame::NONE
+                    .fill(if *cancel_hovered {
+                        Color32::LIGHT_GRAY.gamma_multiply(0.2)
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .corner_radius(CornerRadius::same(5))
+                    .show(ui, |ui| {
+                        //Cancel button
+                        let cancel_response = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                        *cancel_hovered = cancel_response.hovered();
+                        let cancelled = cancel_response.clicked();
+                        r |= cancel_response;
 
-                // Operator
-                let op_response = ui.add(Label::new(regular(format!("{op}").as_str())));
-                edges.add(op_response.rect, ButtonState::None);
-                edges.commit_layer();
-                ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                r |= op_response;
+                        // Operator
+                        let op_response = ui.add(Label::new(regular(format!("{op}").as_str())));
+                        edges.add(op_response.rect, ButtonState::None);
+                        edges.commit_layer();
+                        ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                        r |= op_response;
 
-                // Second condition
-                let second_response = c2.ui(ui, try_to_complete, hovered_condition, color, edges);
-                r |= second_response;
+                        // Second condition
+                        let second_response =
+                            c2.ui(ui, try_to_complete, hovered_condition, color, edges);
+                        r |= second_response;
+                    });
 
                 r
             }
@@ -1754,8 +1802,18 @@ impl Display for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Plain(c) => write!(f, "{c}"),
-            Self::Boolean(c1, c2, BooleanOp::And) => write!(f, "{c1} and {c2}"),
-            Self::Boolean(c1, c2, BooleanOp::Or) => write!(f, "{c1} or {c2}"),
+            Self::Boolean {
+                condition1,
+                condition2,
+                op: BooleanOp::And,
+                ..
+            } => write!(f, "{condition1} and {condition2}"),
+            Self::Boolean {
+                condition1,
+                condition2,
+                op: BooleanOp::Or,
+                ..
+            } => write!(f, "{condition1} or {condition2}"),
             Self::Incomplete { .. } => unimplemented!(),
         }
     }
