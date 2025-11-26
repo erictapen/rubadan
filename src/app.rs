@@ -52,6 +52,9 @@ const TRASH_SYMBOL: &str = "🗑";
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
 
+/// Minimal width of TextEdit elements
+const MIN_TEXT_EDIT_WIDTH: f32 = 50.0;
+
 const PHI: f32 = 1.618_034;
 
 fn load_fonts(ctx: &egui::Context) {
@@ -1305,8 +1308,12 @@ impl Rule {
                             edges.add(r.rect, ButtonState::from_response(&r));
                         })
                         .response;
-                    let text_edit_category_response =
-                        ui.add(TextEdit::singleline(category).font(regular_font_id(ui)));
+                    let text_edit_category_response = ui.add(
+                        TextEdit::singleline(category)
+                            .desired_width(MIN_TEXT_EDIT_WIDTH)
+                            .clip_text(false)
+                            .font(regular_font_id(ui)),
+                    );
                     if category.is_empty() {
                         missing_value_indicator(
                             ui,
@@ -1738,21 +1745,25 @@ impl Condition {
 
                 // value
                 {
-                    let text_edit_response =
-                        ui.add(TextEdit::singleline(&mut (*value)).font(regular_font_id(ui)));
+                    let value_response = ui.add(
+                        TextEdit::singleline(&mut (*value))
+                            .desired_width(MIN_TEXT_EDIT_WIDTH)
+                            .clip_text(false)
+                            .font(regular_font_id(ui)),
+                    );
                     if value.is_empty() {
                         missing_value_indicator(
                             ui,
-                            text_edit_response.rect,
+                            value_response.rect,
                             "missing_value".into(),
                             try_to_complete,
                         );
                     }
 
-                    edges.add(text_edit_response.rect, Default::default());
+                    edges.add(value_response.rect, Default::default());
                     edges.commit_layer();
 
-                    r |= text_edit_response;
+                    r |= value_response;
                 }
                 r
             }
@@ -1944,7 +1955,7 @@ impl Edges {
                         painter,
                         from.right_center() + gap,
                         to.left_center()
-                            + if to.width() > 1.0 {
+                            - if to.width() > 1.0 {
                                 gap
                             } else {
                                 Default::default()
