@@ -1637,6 +1637,7 @@ impl Condition {
                         *field = None;
                     }
                 }
+
                 // Add an intermediate knot for the edges to avoid a many -> many
                 {
                     ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
@@ -1713,15 +1714,29 @@ impl Condition {
                 r
             }
             Self::Boolean(c1, c2, op) => {
+                // First condition
                 let mut r = c1.ui(ui, try_to_complete, hovered_condition, color, edges);
+
                 // Commit an empty layer to break the edges
                 edges.commit_layer();
+
+                //Cancel button
+                let cancel_response = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                let cancel_hovered = cancel_response.hovered();
+                let cancelled = cancel_response.clicked();
+                r |= cancel_response;
+
+                // Operator
                 let op_response = ui.add(Label::new(regular(format!("{op}").as_str())));
                 edges.add(op_response.rect, ButtonState::None);
                 edges.commit_layer();
                 ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
                 r |= op_response;
-                r |= c2.ui(ui, try_to_complete, hovered_condition, color, edges);
+
+                // Second condition
+                let second_response = c2.ui(ui, try_to_complete, hovered_condition, color, edges);
+                r |= second_response;
+
                 r
             }
         }
@@ -1775,21 +1790,26 @@ impl Edges {
 
         // Visual gap between element and the curve
         // We don't apply it when a layer consists of a single very small node
-        let gap = Vec2::new(10.0, 0.0);
+        let gap = Vec2::new(4.0, 0.0);
 
         // Helper function to do the low level curve painting
         let curve = |painter: &mut Painter, from: Pos2, to: Pos2, state: ButtonState| {
             let (stroke, layer) = match state {
                 ButtonState::None => (egui::Stroke::new(2.0, Color32::LIGHT_GRAY), none_layer),
-                ButtonState::Hovered => {
-                    (egui::Stroke::new(4.0, Color32::LIGHT_BLUE), hovered_layer)
-                }
-                ButtonState::Active => (egui::Stroke::new(4.0, Color32::BLUE), active_layer),
+                ButtonState::Hovered => (egui::Stroke::new(4.0, Color32::GRAY), hovered_layer),
+                ButtonState::Active => (egui::Stroke::new(4.0, Color32::LIGHT_BLUE), active_layer),
             };
+
+            let x_dist = from.x - to.x;
 
             painter.set_layer_id(layer);
             painter.add(epaint::CubicBezierShape::from_points_stroke(
-                [from, Pos2::new(to.x, from.y), Pos2::new(from.x, to.y), to],
+                [
+                    from,
+                    Pos2::new(to.x + x_dist * 0.5, from.y),
+                    Pos2::new(from.x - x_dist * 0.5, to.y),
+                    to,
+                ],
                 false,
                 Color32::TRANSPARENT,
                 stroke,
