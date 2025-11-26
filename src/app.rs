@@ -1280,6 +1280,9 @@ impl Rule {
                 let mut edges = Edges::new();
 
                 ui.horizontal_top(|ui| {
+                    // Otherwise button content gets wrapped once space is running out
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+
                     let mut r = ui.add(Label::new(regular("When")));
                     edges.add(r.rect, ButtonState::None);
                     edges.commit_layer();
