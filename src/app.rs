@@ -865,6 +865,7 @@ impl App {
                         .show_inside(ui, |ui| {
                             let annotations_response = TableBuilder::new(ui)
                                 .vertical_scroll_offset(self.data_vertical_scroll_offset)
+                                .cell_layout(Layout::left_to_right(Align::Center))
                                 // Optional: Hide when data_panel_response doesn't indicate hover
                                 .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                                 .auto_shrink([false, false])
@@ -916,6 +917,7 @@ impl App {
 
                         let table_state = TableBuilder::new(ui)
                             .vertical_scroll_offset(self.data_vertical_scroll_offset)
+                                .cell_layout(Layout::left_to_right(Align::Center))
                             // Let the annotations table show a scrollbar instead
                             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden)
                             .auto_shrink([false, false])
@@ -930,7 +932,7 @@ impl App {
                                     ui.label(bold("Date"));
                                 });
                                 header.col(|ui| {
-                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         ui.label(bold("Amount"));
                                     });
                                 });
@@ -954,7 +956,7 @@ impl App {
                                         // amount
                                         row.col(|ui| {
                                             ui.with_layout(
-                                                Layout::right_to_left(Align::Min),
+                                                Layout::right_to_left(Align::Center),
                                                 |ui| {
                                                     entry.money.ui(ui, &mut self.minimap);
                                                 },
