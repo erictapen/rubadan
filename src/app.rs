@@ -869,8 +869,8 @@ impl App {
                                 // Optional: Hide when data_panel_response doesn't indicate hover
                                 .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                                 .auto_shrink([false, false])
-                            .striped(true)
-                                .column(Column::auto())
+                                .striped(true)
+                                .column(Column::remainder())
                                 .header(20.0, |mut header| {
                                     header.col(|ui| {
                                         ui.label(bold("Annotation"));
@@ -926,10 +926,10 @@ impl App {
                             .column(Column::auto())
                             .column(Column::auto())
                             .column(Column::auto())
-                            .column(Column::auto())
+                            .column(Column::remainder())
                             .header(20.0, |mut header| {
                                 header.col(|ui| {
-                                    ui.label(bold("Date"));
+                                         ui.label(bold("Date"));
                                 });
                                 header.col(|ui| {
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -951,7 +951,7 @@ impl App {
                                     body.row(row_height, |mut row| {
                                         // date
                                         row.col(|ui| {
-                                            entry.date.ui(ui, &mut self.minimap);
+                                                    entry.date.ui(ui, &mut self.minimap);
                                         });
                                         // amount
                                         row.col(|ui| {
