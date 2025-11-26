@@ -386,6 +386,9 @@ impl Annotation {
             manual: Default::default(),
         }
     }
+    fn clear_derived(&mut self) {
+        self.derived = None;
+    }
     /// The final value that is used for e.g. exporting
     fn category(&self) -> Option<String> {
         if let Some(derivedh) = &self.derived {
@@ -739,13 +742,29 @@ impl App {
     /// Annotate data rows
     /// The idea is to not run this every frame
     fn update_annotations(&mut self) {
+        for rule in &mut self.rules {
+            rule.clear_counts();
+        }
         for entry in &mut *self.data.lock().unwrap() {
-            entry.annotation = Default::default();
-            for rule in &self.rules {
+            entry.annotation.clear_derived();
+            for rule in &mut self.rules {
+                let rule_matches = rule.matches(entry);
                 // We only use complete rules for annotation
-                if let Rule::Complete { category, .. } = rule {
-                    if rule.matches(entry) {
-                        entry.annotation = Annotation::derived(category.clone());
+                if let Rule::Complete {
+                    category,
+                    count,
+                    count_overriden,
+                    ..
+                } = rule
+                {
+                    // Earlier rules take precedence over later rules
+                    if rule_matches {
+                        if entry.annotation.derived.is_none() {
+                            entry.annotation = Annotation::derived(category.clone());
+                            *count += 1;
+                        } else {
+                            *count_overriden += 1;
+                        }
                     }
                 }
             }
@@ -1250,6 +1269,8 @@ enum Rule {
         enabled: bool,
         condition: Condition,
         category: String,
+        count: u64,
+        count_overriden: u64,
         hovered: bool,
         dragged: ButtonState,
         delete: ButtonState,
@@ -1268,6 +1289,8 @@ impl Rule {
             enabled: true,
             condition,
             category,
+            count: 0,
+            count_overriden: 0,
             hovered: false,
             dragged: Default::default(),
             delete: Default::default(),
@@ -1305,6 +1328,17 @@ impl Rule {
                 ..
             }
         )
+    }
+    fn clear_counts(&mut self) {
+        if let Self::Complete {
+            count,
+            count_overriden,
+            ..
+        } = self
+        {
+            *count = 0;
+            *count_overriden = 0;
+        }
     }
     fn ui(
         &mut self,
@@ -1425,6 +1459,8 @@ impl Rule {
                 ref mut condition,
                 ref mut delete,
                 ref category,
+                ref count,
+                ref count_overriden,
                 ..
             } => {
                 let response = ui.horizontal_top(|ui| {
@@ -1477,7 +1513,24 @@ impl Rule {
                         condition.ui(ui, false, hovered_condition, color, &mut Edges::new());
                     rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
                     rule_text |= ui.add(Label::new(regular(category).color(color)));
-                    if !*enabled {
+                    if *enabled {
+                        Frame::NONE
+                            .fill(Color32::LIGHT_GREEN)
+                            .corner_radius(CornerRadius::same(7))
+                            .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                            .show(ui, |ui| {
+                                ui.label(regular(&format!("{count}")));
+                            });
+                        if *count_overriden > 0 {
+                            Frame::NONE
+                                .fill(Color32::ORANGE.gamma_multiply(0.5))
+                                .corner_radius(CornerRadius::same(7))
+                                .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                                .show(ui, |ui| {
+                                    ui.label(regular(&format!("{count_overriden}")));
+                                });
+                        }
+                    } else {
                         ui.painter().hline(
                             rule_text.rect.x_range(),
                             rule_text.rect.center().y,
