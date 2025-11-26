@@ -31,7 +31,8 @@ use std::fmt::Display;
 use egui::text_edit::TextEdit;
 use egui::{
     Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, LayerId, Layout, Margin,
-    Painter, Rect, Response, RichText, StrokeKind, Ui, UiBuilder,
+    Painter, Rect, Response, RichText, StrokeKind, TextFormat, Ui, UiBuilder, WidgetText,
+    text::LayoutJob,
 };
 use epaint::{CornerRadius, Pos2, RectShape, Vec2};
 use log::{debug, error, info, warn};
@@ -195,24 +196,65 @@ struct Money {
     credit: bool,
 }
 
+impl Money {
+    fn to_widget_text(&self, ui: &mut Ui) -> WidgetText {
+        let mut layout_job = LayoutJob::default();
+
+        let regular = TextFormat::simple(regular_font_id(ui), ui.style().visuals.text_color());
+        let light = TextFormat::simple(regular_font_id(ui), Color32::GRAY);
+
+        // sign
+        if self.credit {
+            layout_job.append("−", 0.0, regular.clone());
+        } else {
+            layout_job.append("+", 0.0, light.clone());
+        }
+
+        // int
+        {
+            // Reverse iterate over integer part to insert commas every 3 digits
+            let mut formatted_int = String::new();
+            for (i, ch) in self.amount.trunc().to_string().chars().rev().enumerate() {
+                if i != 0 && i % 3 == 0 {
+                    formatted_int.push(',');
+                }
+                formatted_int.push(ch);
+            }
+            // Reverse back to normal order
+            let formatted_int = formatted_int.chars().rev().collect::<String>();
+            layout_job.append(&formatted_int, 0.0, regular.clone());
+        }
+
+        // fractional part
+        {
+            let frac = self.amount.fract().mantissa();
+            if frac != 0 {
+                layout_job.append(&(".".to_owned() + &frac.to_string()), 0.0, regular.clone());
+            } else {
+                layout_job.append(".00", 0.0, light.clone());
+            }
+        }
+
+        // currency sign
+        {
+            let currency_sign = match self.iso_currency_code.as_str() {
+                "EUR" => "€",
+                c => {
+                    error!("Unknown currency code {}", c);
+                    "?"
+                }
+            };
+            layout_job.append(&format!("{THIN_SPACE}{currency_sign}"), 0.0, light.clone());
+        }
+
+        layout_job.into()
+    }
+}
+
 impl Renderable for Money {
     fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
-        let currency_sign = match self.iso_currency_code.as_str() {
-            "EUR" => "€",
-            c => {
-                error!("Unknown currency code {}", c);
-                "?"
-            }
-        };
-        let sign = match self.credit {
-            true => "",
-            false => "−",
-        };
-        let number = self.amount;
-        let response = ui.label(
-            regular(format!("{sign}{number}{THIN_SPACE}{currency_sign}").as_str())
-                .background_color(style.color()),
-        );
+        let widget_text = self.to_widget_text(ui);
+        let response = ui.label(widget_text);
         minimap.push(response.rect, style);
     }
 }
