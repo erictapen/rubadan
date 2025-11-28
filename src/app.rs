@@ -1527,7 +1527,12 @@ impl Rule {
                                 .corner_radius(CornerRadius::same(7))
                                 .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
                                 .show(ui, |ui| {
-                                    ui.label(regular(&format!("{count_overriden}")));
+                                    let r = ui.label(regular(&format!("{count_overriden}")));
+                                    ui.painter().hline(
+                                        r.rect.x_range(),
+                                        r.rect.center().y,
+                                        egui::Stroke::new(1.0, ui.style().visuals.text_color()),
+                                    );
                                 });
                         }
                     } else {
@@ -1733,8 +1738,10 @@ impl Condition {
                 ctype,
                 value,
             }) => {
-                let response = ui.add(Label::new(
-                    regular(format!("{field} {ctype} “{value}”").as_str()).color(color),
+                let mut response =
+                    ui.add(Label::new(bold(format!("{field}").as_str()).color(color)));
+                response |= ui.add(Label::new(
+                    regular(format!("{ctype} “{value}”").as_str()).color(color),
                 ));
                 if response.hovered() {
                     *hovered_condition = Some(self.clone());
