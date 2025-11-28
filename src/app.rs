@@ -35,7 +35,7 @@ use egui::{
     text::LayoutJob,
 };
 use epaint::{CornerRadius, Pos2, RectShape, Vec2};
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
@@ -49,6 +49,7 @@ const GRIP_SYMBOL: &str = "⠿";
 const CANCEL_SYMBOL: &str = "🗙";
 const CHECK_SYMBOL: &str = "✓";
 const TRASH_SYMBOL: &str = "🗑";
+const COPY_SYMBOL: &str = "⧉";
 
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
@@ -192,11 +193,34 @@ fn parse_mt940_file(bytes: &[u8]) -> Vec<DataRow> {
 
 struct Money {
     amount: rust_decimal::Decimal,
-    iso_currency_code: String,
+    currency_sign: String,
     credit: bool,
 }
 
 impl Money {
+    fn new(amount: rust_decimal::Decimal, iso_currency_code: &str, credit: bool) -> Self {
+        let currency_sign = match iso_currency_code {
+            "EUR" => "€",
+            c => {
+                error!("Unknown currency code {}", c);
+                "?"
+            }
+        };
+        Self {
+            amount,
+            currency_sign: currency_sign.to_string(),
+            credit,
+        }
+    }
+    fn to_hledger_str(&self) -> String {
+        format!(
+            "{}{}{}",
+            if self.credit { "" } else { "-" },
+            self.amount,
+            self.currency_sign
+        )
+    }
+    /// The way we render it in the UI table
     fn to_widget_text(&self, ui: &mut Ui) -> WidgetText {
         let mut layout_job = LayoutJob::default();
 
@@ -237,14 +261,11 @@ impl Money {
 
         // currency sign
         {
-            let currency_sign = match self.iso_currency_code.as_str() {
-                "EUR" => "€",
-                c => {
-                    error!("Unknown currency code {}", c);
-                    "?"
-                }
-            };
-            layout_job.append(&format!("{THIN_SPACE}{currency_sign}"), 0.0, light.clone());
+            layout_job.append(
+                &format!("{THIN_SPACE}{}", self.currency_sign),
+                0.0,
+                light.clone(),
+            );
         }
 
         layout_job.into()
@@ -380,11 +401,8 @@ struct Annotation {
 }
 
 impl Annotation {
-    fn derived(str: String) -> Self {
-        Self {
-            derived: Some(Highlightable::new(str)),
-            manual: Default::default(),
-        }
+    fn set_derived(&mut self, str: String) {
+        self.derived = Some(Highlightable::new(str));
     }
     fn clear_derived(&mut self) {
         self.derived = None;
@@ -408,23 +426,31 @@ impl Annotation {
         if self.manual.is_some() {
             if ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
                 self.manual = None;
+                App::request_update_annotations(ui.ctx());
             };
         }
-        let rect = egui::ComboBox::from_label("")
+        let response = egui::ComboBox::from_label("")
             .width(0.0)
             .icon(|_, _, _, _| {})
             .selected_text(regular(self.category().as_deref().unwrap_or("")))
             .show_ui(ui, |ui: &mut Ui| {
+                let mut changed = false;
                 for category in known_categories {
-                    ui.selectable_value(
-                        &mut self.manual,
-                        Some(category.clone()),
-                        regular(category),
-                    );
+                    changed = ui
+                        .selectable_value(
+                            &mut self.manual,
+                            Some(category.clone()),
+                            regular(category),
+                        )
+                        .changed()
+                        || changed;
                 }
-            })
-            .response
-            .rect;
+                changed
+            });
+        if let Some(true) = response.inner {
+            App::request_update_annotations(ui.ctx());
+        }
+        let rect = response.response.rect;
         // derived takes precedence, so we strike through the label again
         if self.derived.is_some() && self.manual.is_some() {
             ui.painter().hline(
@@ -466,11 +492,7 @@ impl DataRow {
                 };
                 DataRow {
                     date: Highlightable::new(sl.value_date),
-                    money: Highlightable::new(Money {
-                        amount: sl.amount,
-                        iso_currency_code: iso_currency_code.clone(),
-                        credit,
-                    }),
+                    money: Highlightable::new(Money::new(sl.amount, &iso_currency_code, credit)),
                     iban: iban.map(RawIban).map(Highlightable::new),
                     name: name.map(Highlightable::new),
                     purpose: purpose.map(Highlightable::new),
@@ -563,6 +585,7 @@ pub struct App {
     data_vertical_scroll_offset: f32,
     rules: Vec<Rule>,
     account_name: String,
+    unmatched_rows: u64,
     known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
@@ -575,6 +598,7 @@ impl Default for App {
             data_vertical_scroll_offset: 0.0,
             rules: Default::default(),
             account_name: "assets".to_string(),
+            unmatched_rows: 0,
             known_categories: Default::default(),
             hints: Default::default(),
             minimap: Default::default(),
@@ -742,13 +766,15 @@ impl App {
     /// Annotate data rows
     /// The idea is to not run this every frame
     fn update_annotations(&mut self) {
+        info!("Updating annotations");
         for rule in &mut self.rules {
             rule.clear_counts();
         }
-        for entry in &mut *self.data.lock().unwrap() {
-            entry.annotation.clear_derived();
+        self.unmatched_rows = 0;
+        for row in &mut *self.data.lock().unwrap() {
+            row.annotation.clear_derived();
             for rule in &mut self.rules {
-                let rule_matches = rule.matches(entry);
+                let rule_matches = rule.matches(row);
                 // We only use complete rules for annotation
                 if let Rule::Complete {
                     category,
@@ -757,16 +783,20 @@ impl App {
                     ..
                 } = rule
                 {
-                    // Earlier rules take precedence over later rules
                     if rule_matches {
-                        if entry.annotation.derived.is_none() {
-                            entry.annotation = Annotation::derived(category.clone());
+                        // Earlier rules take precedence over later rules
+                        if row.annotation.derived.is_none() {
+                            row.annotation.set_derived(category.clone());
                             *count += 1;
                         } else {
                             *count_overriden += 1;
                         }
                     }
                 }
+            }
+            // The row is neither matched by rules nor manually
+            if row.annotation.derived.is_none() && row.annotation.manual.is_none() {
+                self.unmatched_rows += 1;
             }
         }
         self.known_categories.clear();
@@ -1043,8 +1073,81 @@ impl App {
             self.hints.push(Hint::Transactions);
         }
     }
+    /// Export into hledger format.
+    /// At some point we might use a dedicated crate for that but I didn't find anything at the
+    /// time of writing
+    fn export_hledger(&self) -> String {
+        let mut result = String::new();
+
+        for row in &mut *self.data.lock().unwrap() {
+            let date = row.date.inner;
+            let name: &str = row.name.as_ref().map_or("", |h| &h.inner);
+            let purpose: &str = row.purpose.as_ref().map_or("", |h| &h.inner);
+            let amount = row.money.inner.to_hledger_str();
+            let account1 = &self.account_name;
+            let account2 = row.annotation.category().expect("It shouldn't be possible to export when some annotation doesn't return a category yet");
+
+            result += &format!("{date} {name} {purpose}\n");
+            if row.money.inner.credit {
+                result += &format!("  {account2}  {amount}\n");
+                result += &format!("  {account1}\n");
+            } else {
+                result += &format!("  {account1}  {amount}\n");
+                result += &format!("  {account2}\n");
+            }
+            result += "\n";
+        }
+
+        result
+    }
+    fn export_panel(&mut self, ui: &mut Ui) {
+        egui::SidePanel::right("minimap")
+            .resizable(false)
+            .exact_width(200.0)
+            .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
+            .show_inside(ui, |ui| {
+                ui.label(regular("The name of this account"));
+                ui.add(TextEdit::singleline(&mut self.account_name).font(regular_font_id(ui)));
+                ui.label(regular(
+                    format!(
+                        "Provide annotations for {} remaining data rows",
+                        self.unmatched_rows
+                    )
+                    .as_str(),
+                ));
+
+                // Can we actually allow the user to export?
+                let exportable = self.unmatched_rows == 0
+                    && !self.data.lock().unwrap().is_empty()
+                    && !self.account_name.is_empty();
+
+                ui.add_enabled(
+                    exportable,
+                    Button::new(regular("Export to file").color(Color32::WHITE))
+                        .fill(Color32::DARK_GREEN),
+                );
+                let clipboard_button_response = ui.add_enabled(
+                    exportable,
+                    Button::new(regular("Export to clipboard").color(Color32::WHITE))
+                        .fill(Color32::DARK_GREEN),
+                );
+                if clipboard_button_response.clicked() {
+                    ui.ctx()
+                        .send_cmd(egui::OutputCommand::CopyText(self.export_hledger()));
+                }
+                let notification_color = animate_color_pulse(
+                    ui.ctx(),
+                    "clipboard_export_warning".into(),
+                    clipboard_button_response.clicked(),
+                    ui.style().visuals.text_color(),
+                    2.0,
+                );
+                if notification_color != Color32::TRANSPARENT {
+                    ui.add(Label::new(regular("Copied!").color(notification_color)));
+                }
+            });
+    }
     fn rules_panel(&mut self, ctx: &egui::Context) {
-        let mut a_rule_changed = false;
         // Keep track if there is any rule being edited
         let mut a_rule_is_being_edited = false;
 
@@ -1052,6 +1155,8 @@ impl App {
         let mut hovered_condition: Option<Condition> = None;
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
+            self.export_panel(ui);
+
             ui.add(Label::new(bold("Rules")));
             egui::ScrollArea::both()
                 .auto_shrink([false, false])
@@ -1064,21 +1169,22 @@ impl App {
                     let mut drop_to = None;
 
                     // Delete rules marked as to be deleted
-                    self.rules.retain(|r| !r.to_delete());
+                    self.rules.retain(|r| {
+                        if !r.to_delete() {
+                            App::request_update_annotations(ui.ctx());
+                            true
+                        } else {
+                            false
+                        }
+                    });
 
                     for (i, rule) in self.rules.iter_mut().enumerate() {
                         match *rule {
-                            Rule::Complete {
-                                enabled, dragged, ..
-                            } => {
-                                let old_enabled = enabled;
+                            Rule::Complete { dragged, .. } => {
                                 let egui::InnerResponse {
                                     inner: rule_response,
                                     response,
                                 } = rule.ui(ui, &mut hovered_condition, i);
-                                if let Rule::Complete { enabled, .. } = rule {
-                                    a_rule_changed |= old_enabled != *enabled;
-                                }
                                 if rule_response.hovered() {
                                     hovered_rule = Some(rule.clone());
                                 }
@@ -1153,7 +1259,7 @@ impl App {
                     ) {
                         let rule = self.rules.remove(*from);
                         self.rules.insert(to.min(self.rules.len()), rule);
-                        a_rule_changed = true;
+                        App::request_update_annotations(ui.ctx());
                     }
 
                     if !a_rule_is_being_edited
@@ -1171,11 +1277,6 @@ impl App {
         // might be inefficient?
         for entry in &mut *self.data.lock().unwrap() {
             entry.highlight(&hovered_rule, &hovered_condition);
-        }
-
-        if a_rule_changed {
-            debug!("At least one rule changed this frame");
-            self.update_annotations();
         }
     }
     fn bottom_bar(&mut self, ctx: &egui::Context) {
@@ -1506,7 +1607,11 @@ impl Rule {
                     }
 
                     // toggle switch
-                    r |= ui.add(widgets::toggle_switch::toggle(enabled));
+                    let toggle_response = ui.add(widgets::toggle_switch::toggle(enabled));
+                    if toggle_response.changed() {
+                        App::request_update_annotations(ui.ctx());
+                    }
+                    r |= toggle_response;
 
                     let mut rule_text = ui.add(Label::new(regular("When").color(color)));
                     rule_text |=
@@ -2090,6 +2195,7 @@ impl Edges {
     }
 }
 
+/// An animation where a color is suddenly there and then fades out over time
 fn animate_color_pulse(
     ctx: &Context,
     id: Id,
