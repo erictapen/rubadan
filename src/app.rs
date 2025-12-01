@@ -385,15 +385,6 @@ impl Renderable for RawIban {
     }
 }
 
-struct DataRow {
-    date: Highlightable<chrono::NaiveDate>,
-    money: Highlightable<Money>,
-    iban: Option<Highlightable<RawIban>>,
-    name: Option<Highlightable<String>>,
-    purpose: Option<Highlightable<String>>,
-    annotation: Annotation,
-}
-
 #[derive(Default)]
 struct Annotation {
     derived: Option<Highlightable<String>>,
@@ -470,6 +461,15 @@ impl Annotation {
     }
 }
 
+struct DataRow {
+    date: Highlightable<chrono::NaiveDate>,
+    money: Highlightable<Money>,
+    iban: Option<Highlightable<RawIban>>,
+    name: Option<Highlightable<String>>,
+    purpose: Option<Highlightable<String>>,
+    annotation: Annotation,
+}
+
 impl DataRow {
     fn from_message(message: mt940::Message) -> Vec<Self> {
         use mt940::ExtDebitOrCredit;
@@ -490,6 +490,19 @@ impl DataRow {
                     }) => (applicant_name, applicant_iban, purpose),
                     None | Some(mt940::InformationToAccountOwner::Plain(_)) => (None, None, None),
                 };
+                let purpose = purpose.map(|p| {
+                    if let Ok((
+                        _,
+                        crate::german_sepa::PaymentInfo {
+                            svwz: Some(svwz), ..
+                        },
+                    )) = crate::german_sepa::parse_purpose(&p)
+                    {
+                        svwz.to_string()
+                    } else {
+                        p
+                    }
+                });
                 DataRow {
                     date: Highlightable::new(sl.value_date),
                     money: Highlightable::new(Money::new(sl.amount, &iso_currency_code, credit)),

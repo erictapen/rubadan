@@ -1,6 +1,7 @@
 mod app;
 pub use app::App;
 
+mod german_sepa;
 mod utils;
 mod widgets;
 
