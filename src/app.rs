@@ -388,24 +388,23 @@ struct RawIban(String);
 
 impl Renderable for RawIban {
     fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
-        let response;
-        if let Ok(iban) = self.0.parse::<iban::Iban>() {
-            response = ui.add(
+        let response = if let Ok(iban) = self.0.parse::<iban::Iban>() {
+            ui.add(
                 Label::new(
                     regular(format!("{iban}").replace(" ", THIN_SPACE).as_str())
                         .background_color(style.color()),
                 )
                 .extend(),
-            );
+            )
         } else {
-            response = ui.add(
+            ui.add(
                 Label::new(
                     regular(format!("{}{THIN_SPACE}❌", self.0).as_str())
                         .background_color(style.color()),
                 )
                 .extend(),
-            );
-        }
+            )
+        };
         minimap.push(response.rect, style);
     }
 }
@@ -450,14 +449,13 @@ impl Annotation {
             .show_ui(ui, |ui: &mut Ui| {
                 let mut changed = false;
                 for category in known_categories {
-                    changed = ui
+                    changed |= ui
                         .selectable_value(
                             &mut self.manual,
                             Some(category.clone()),
                             regular(category),
                         )
-                        .changed()
-                        || changed;
+                        .changed();
                 }
                 changed
             });
@@ -494,49 +492,55 @@ struct DataRow {
     annotation: Annotation,
 }
 
-impl DataRow {
-    fn from_message(message: mt940::Message) -> Vec<Self> {
+impl From<(mt940::StatementLine, &String)> for DataRow {
+    fn from(args: (mt940::StatementLine, &String)) -> DataRow {
         use mt940::ExtDebitOrCredit;
 
+        let (sl, iso_currency_code) = args;
+        let credit = sl.ext_debit_credit_indicator == ExtDebitOrCredit::Credit
+            || sl.ext_debit_credit_indicator == ExtDebitOrCredit::ReverseDebit;
+        let (name, iban, purpose) = match sl.information_to_account_owner {
+            Some(mt940::InformationToAccountOwner::Structured {
+                applicant_name,
+                applicant_iban,
+                purpose,
+                ..
+            }) => (applicant_name, applicant_iban, purpose),
+            None | Some(mt940::InformationToAccountOwner::Plain(_)) => (None, None, None),
+        };
+        let purpose = purpose.map(|p| {
+            if let Ok((
+                _,
+                crate::german_sepa::PaymentInfo {
+                    svwz: Some(svwz), ..
+                },
+            )) = crate::german_sepa::parse_purpose(&p)
+            {
+                svwz.to_string()
+            } else {
+                p
+            }
+        });
+        DataRow {
+            id: generate_id(),
+            date: Highlightable::new(sl.value_date),
+            money: Highlightable::new(Money::new(sl.amount, iso_currency_code, credit)),
+            iban: iban.map(RawIban).map(Highlightable::new),
+            name: name.map(Highlightable::new),
+            purpose: purpose.map(Highlightable::new),
+            annotation: Default::default(),
+        }
+    }
+}
+
+impl DataRow {
+    fn from_message(message: mt940::Message) -> Vec<Self> {
         let iso_currency_code = message.opening_balance.iso_currency_code;
         message
             .statement_lines
             .into_iter()
-            .map(|sl| {
-                let credit = sl.ext_debit_credit_indicator == ExtDebitOrCredit::Credit
-                    || sl.ext_debit_credit_indicator == ExtDebitOrCredit::ReverseDebit;
-                let (name, iban, purpose) = match sl.information_to_account_owner {
-                    Some(mt940::InformationToAccountOwner::Structured {
-                        applicant_name,
-                        applicant_iban,
-                        purpose,
-                        ..
-                    }) => (applicant_name, applicant_iban, purpose),
-                    None | Some(mt940::InformationToAccountOwner::Plain(_)) => (None, None, None),
-                };
-                let purpose = purpose.map(|p| {
-                    if let Ok((
-                        _,
-                        crate::german_sepa::PaymentInfo {
-                            svwz: Some(svwz), ..
-                        },
-                    )) = crate::german_sepa::parse_purpose(&p)
-                    {
-                        svwz.to_string()
-                    } else {
-                        p
-                    }
-                });
-                DataRow {
-                    id: generate_id(),
-                    date: Highlightable::new(sl.value_date),
-                    money: Highlightable::new(Money::new(sl.amount, &iso_currency_code, credit)),
-                    iban: iban.map(RawIban).map(Highlightable::new),
-                    name: name.map(Highlightable::new),
-                    purpose: purpose.map(Highlightable::new),
-                    annotation: Default::default(),
-                }
-            })
+            .zip(std::iter::repeat(&iso_currency_code))
+            .map(From::from)
             .collect()
     }
     fn set_style_to_every_field(&mut self, style: SelectStyle) {
@@ -697,19 +701,17 @@ impl App {
         result.update_annotations();
         result
     }
-    fn file_load_button(&mut self, ctx: &egui::Context, ui: &mut Ui) {
-        let widget = |ui: &mut Ui| {
-            Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
+    fn file_load_widget(&mut self, ui: &mut Ui) {
+        Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                 ui.add(Label::new(regular("TODO processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or")));
                 let button_response = ui.button(bold("pick one."));
                 if button_response.clicked() {
                     let task = rfd::AsyncFileDialog::new().pick_file();
                     let data_clone = Arc::clone(&self.data);
-                    let ctx_clone = ctx.clone();
+                    let ctx_clone = ui.ctx().clone();
                     execute(async move {
-                        let file = task.await;
-                        if let Some(file) = file {
+                        if let Some(file) = task.await {
                             let file_content = file.read().await;
                             let parsed = parse_mt940_file(&file_content);
 
@@ -724,9 +726,10 @@ impl App {
                 }
                 });
             });
-        };
+    }
+    fn file_load_panel(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         let widget_size = ui
-            .scope_builder(UiBuilder::new().invisible(), widget)
+            .scope_builder(UiBuilder::new().invisible(), |ui| self.file_load_widget(ui))
             .response
             .rect
             .size();
@@ -777,31 +780,27 @@ impl App {
             let period = 10.0;
             let speed = 0.1;
             let time = (ctx.input(|i| i.time) % std::f64::consts::TAU) as f32;
-            crate::utils::paint_dashed_rect_shape(
-                ui,
-                RectShape::stroke(
-                    target_rect,
-                    CornerRadius::same(50),
-                    if hovering {
-                        egui::Stroke::new(4.0, Color32::DARK_GRAY)
-                    } else {
-                        egui::Stroke::new(4.0, Color32::GRAY)
-                    },
-                    StrokeKind::Middle,
-                ),
-                10.0,
-                10.0,
-                |pos| {
-                    let center_to_pos = *pos - target_rect.center();
-                    *pos + animate_factor
-                        * intensity
-                        * (((center_to_pos.angle() + (speed * time)) * period).sin())
-                        * center_to_pos
+            let distortion = |pos: &mut Pos2| {
+                let center_to_pos = *pos - target_rect.center();
+                *pos + animate_factor
+                    * intensity
+                    * (((center_to_pos.angle() + (speed * time)) * period).sin())
+                    * center_to_pos
+            };
+            let rect_shape = RectShape::stroke(
+                target_rect,
+                CornerRadius::same(50),
+                if hovering {
+                    egui::Stroke::new(4.0, Color32::DARK_GRAY)
+                } else {
+                    egui::Stroke::new(4.0, Color32::GRAY)
                 },
+                StrokeKind::Middle,
             );
+            crate::utils::paint_dashed_rect_shape(ui, rect_shape, 10.0, 10.0, distortion);
 
             // Paint the inside
-            widget(ui);
+            self.file_load_widget(ui);
         });
     }
     /// Annotate data rows and update highlights
@@ -855,61 +854,53 @@ impl App {
             d.insert_temp("update_annotations".into(), true);
         });
     }
-    fn minimap(&mut self, ctx: &egui::Context, ui: &mut Ui, row_height: f32) {
-        if ctx.input(|i| i.screen_rect().width()) > 600.0 {
-            egui::SidePanel::right("minimap")
-                .resizable(false)
-                .exact_width(200.0)
-                .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
-                .show_inside(ui, |ui| {
-                    if let (Some(from), Some(mut visible_rect)) =
-                        (self.minimap.frame, self.minimap.visible_rect)
-                    {
-                        let mut to = ui.max_rect();
-                        to.set_height(to.width() * from.aspect_ratio());
-                        let transform = emath::RectTransform::from_to(from, to);
-                        visible_rect = transform.transform_rect(visible_rect);
-                        // We try to keep the visible_rect inside the minimap
-                        let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
+    fn minimap(&mut self, ui: &mut Ui, row_height: f32) {
+        egui::SidePanel::right("minimap")
+            .resizable(false)
+            .exact_width(200.0)
+            .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
+            .show_inside(ui, |ui| {
+                if let (Some(from), Some(mut visible_rect)) =
+                    (self.minimap.frame, self.minimap.visible_rect)
+                {
+                    let mut to = ui.max_rect();
+                    to.set_height(to.width() * from.aspect_ratio());
+                    let transform = emath::RectTransform::from_to(from, to);
+                    visible_rect = transform.transform_rect(visible_rect);
+                    // We try to keep the visible_rect inside the minimap
+                    let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
 
-                        for mut rect_shape in self.minimap.elements.drain(..) {
-                            // Expand the lines so that the gaps are closed
-                            rect_shape.rect = rect_shape
-                                .rect
-                                .expand2(Vec2::new(0.0, row_height - rect_shape.rect.height()));
-                            rect_shape.rect = transform.transform_rect(rect_shape.rect);
-                            rect_shape.rect = rect_shape.rect.translate(Vec2::new(0.0, -y_offset));
-                            ui.painter().add(rect_shape);
-                        }
-
-                        visible_rect = visible_rect.translate(Vec2::new(0.0, -y_offset));
-                        ui.painter().add(epaint::RectShape::filled(
-                            visible_rect,
-                            epaint::CornerRadius::same(5),
-                            Color32::LIGHT_GRAY.linear_multiply(0.5),
-                        ));
+                    for mut rect_shape in self.minimap.elements.drain(..) {
+                        // Expand the lines so that the gaps are closed
+                        rect_shape.rect = rect_shape
+                            .rect
+                            .expand2(Vec2::new(0.0, row_height - rect_shape.rect.height()));
+                        rect_shape.rect = transform.transform_rect(rect_shape.rect);
+                        rect_shape.rect = rect_shape.rect.translate(Vec2::new(0.0, -y_offset));
+                        ui.painter().add(rect_shape);
                     }
 
-                    ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
-                        if ui
-                            .add_sized(
-                                [ui.available_width(), 0.0],
-                                Button::new(
-                                    regular("Clear data and load new file").color(Color32::WHITE),
-                                )
-                                .fill(Color32::BLUE),
-                            )
-                            .clicked()
-                        {
-                            self.data.lock().unwrap().clear();
-                        }
+                    visible_rect = visible_rect.translate(Vec2::new(0.0, -y_offset));
+                    ui.painter().add(epaint::RectShape::filled(
+                        visible_rect,
+                        epaint::CornerRadius::same(5),
+                        Color32::LIGHT_GRAY.linear_multiply(0.5),
+                    ));
+                }
 
-                        ui.add_space(ui.available_height());
-                    });
+                ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
+                    let clear_button = ui.add_sized(
+                        [ui.available_width(), 0.0],
+                        Button::new(regular("Clear data and load new file").color(Color32::WHITE))
+                            .fill(Color32::BLUE),
+                    );
+                    if clear_button.clicked() {
+                        self.data.lock().unwrap().clear();
+                    }
+
+                    ui.add_space(ui.available_height());
                 });
-        }
-        // Clear state so that we can write down elements again
-        self.minimap.clear();
+            });
     }
     fn data_panel(&mut self, ctx: &egui::Context) {
         use egui_extras::{Column, TableBuilder};
@@ -923,7 +914,7 @@ impl App {
                 ui.spacing_mut().item_spacing.y = 0.0;
 
                 if self.data.lock().unwrap().is_empty() {
-                    self.file_load_button(ctx, ui);
+                    self.file_load_panel(ctx, ui);
                 } else {
                     // Rows should be exactly as high as a button, as that is currently the
                     // limiting factor, so we premeasure it in an invisible pass
@@ -945,7 +936,11 @@ impl App {
                         ui.painter().add(shape);
                     }
 
-                    self.minimap(ctx, ui, row_height);
+                    if ctx.input(|i| i.screen_rect().width()) > 600.0 {
+                        self.minimap(ui, row_height);
+                    }
+                    // Clear state so that we can write down elements again
+                    self.minimap.clear();
 
                     let mut offset_annotations = 0.0;
                     let mut offset_data = 0.0;
