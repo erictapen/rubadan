@@ -26,7 +26,9 @@ use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::sync::{Arc, Mutex};
 
 use egui::text_edit::TextEdit;
 use egui::{
@@ -37,7 +39,6 @@ use egui::{
 use epaint::{CornerRadius, Pos2, RectShape, Vec2};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -58,6 +59,17 @@ const WARN_FADEOUT_TIME: f32 = 1.0;
 const MIN_TEXT_EDIT_WIDTH: f32 = 50.0;
 
 const PHI: f32 = 1.618_034;
+
+/// Global counter that should only be used inside gen_id()
+static ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// A unique ID that is only there for highlighting relationships
+type Hid = u64;
+
+/// Generate a unique Hid
+fn generate_id() -> Hid {
+    ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
@@ -280,8 +292,21 @@ impl Renderable for Money {
     }
 }
 
+/// Ways in which a Rule can be highlighted
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
+enum RuleHighlight {
+    /// The rule matches the hovered row
+    Match,
+    /// The rule matches the hovered row, but was overriden
+    MatchOverride,
+}
+
+/// Ways in which a DataRow and its annotation can be highlighted
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
+enum RowHighlight {}
+
 /// Distinction for how hovering over one element should highlight others
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 enum SelectStyle {
     /// The element is not affected at all
     #[default]
@@ -460,6 +485,7 @@ impl Annotation {
 }
 
 struct DataRow {
+    id: u64,
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
     iban: Option<Highlightable<RawIban>>,
@@ -502,6 +528,7 @@ impl DataRow {
                     }
                 });
                 DataRow {
+                    id: generate_id(),
                     date: Highlightable::new(sl.value_date),
                     money: Highlightable::new(Money::new(sl.amount, &iso_currency_code, credit)),
                     iban: iban.map(RawIban).map(Highlightable::new),
@@ -600,6 +627,8 @@ pub struct App {
     known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
+    /// The id of the widget currently being hovered
+    hovered_widget: Option<Hid>,
 }
 
 impl Default for App {
@@ -613,6 +642,7 @@ impl Default for App {
             known_categories: Default::default(),
             hints: Default::default(),
             minimap: Default::default(),
+            hovered_widget: None,
         }
     }
 }
@@ -774,7 +804,7 @@ impl App {
             widget(ui);
         });
     }
-    /// Annotate data rows
+    /// Annotate data rows and update highlights
     /// The idea is to not run this every frame
     fn update_annotations(&mut self) {
         info!("Updating annotations");
@@ -791,6 +821,7 @@ impl App {
                     category,
                     count,
                     count_overriden,
+                    highlights,
                     ..
                 } = rule
                     && rule_matches
@@ -798,8 +829,10 @@ impl App {
                     // Earlier rules take precedence over later rules
                     if row.annotation.derived.is_none() {
                         row.annotation.set_derived(category.clone());
+                        highlights.insert(row.id, RuleHighlight::Match);
                         *count += 1;
                     } else {
+                        highlights.insert(row.id, RuleHighlight::MatchOverride);
                         *count_overriden += 1;
                     }
                 }
@@ -1008,37 +1041,44 @@ impl App {
                             .body(|mut body| {
                                 for entry in &mut *self.data.lock().unwrap() {
                                     body.row(row_height, |mut row| {
+
                                         // date
-                                        row.col(|ui| {
-                                                    entry.date.ui(ui, &mut self.minimap);
-                                        });
+                                        let mut r = row.col(|ui| {
+                                            entry.date.ui(ui, &mut self.minimap);
+                                        }).1;
                                         // amount
-                                        row.col(|ui| {
+                                        r |= row.col(|ui| {
                                             ui.with_layout(
                                                 Layout::right_to_left(Align::Center),
                                                 |ui| {
                                                     entry.money.ui(ui, &mut self.minimap);
                                                 },
                                             );
-                                        });
+                                        }).1;
                                         // iban
-                                        row.col(|ui| {
+                                        r |= row.col(|ui| {
                                             if let Some(ibanh) = &entry.iban {
                                                 ibanh.ui(ui, &mut self.minimap);
                                             }
-                                        });
+                                        }).1;
                                         // name
-                                        row.col(|ui| {
+                                        r |= row.col(|ui| {
+                                            ui.painter().add(RectShape::filled(ui.max_rect().expand2(Vec2::new(0.5 * ui.style().spacing.item_spacing.x, 0.0)), CornerRadius::default(), Color32::YELLOW));
                                             if let Some(nameh) = &entry.name {
                                                 nameh.ui(ui, &mut self.minimap);
                                             }
-                                        });
+                                        }).1;
                                         // purpose
-                                        row.col(|ui| {
+                                        r |= row.col(|ui| {
+                                            ui.painter().add(RectShape::filled(ui.max_rect().expand2(Vec2::new(0.5 * ui.style().spacing.item_spacing.x, 0.0)), CornerRadius::default(), Color32::YELLOW));
                                             if let Some(purposeh) = &entry.purpose {
                                                 purposeh.ui(ui, &mut self.minimap);
                                             }
-                                        });
+                                        }).1;
+
+                                        if r.hovered() {
+                                            self.hovered_widget = Some(entry.id);
+                                        }
                                     });
                                 }
                                 self.minimap.frame =
@@ -1334,6 +1374,8 @@ impl eframe::App for App {
             });
         }
 
+        self.hovered_widget = None;
+
         // We turn off text selection globally in case the user is dragging
         // something
         if egui::DragAndDrop::has_any_payload(ctx) {
@@ -1378,6 +1420,7 @@ impl Hint {
 enum Rule {
     Complete {
         enabled: bool,
+        highlights: HashMap<Hid, RuleHighlight>,
         condition: Condition,
         category: String,
         count: u64,
@@ -1398,6 +1441,7 @@ impl Rule {
     fn complete(condition: Condition, category: String) -> Self {
         Self::Complete {
             enabled: true,
+            highlights: HashMap::new(),
             condition,
             category,
             count: 0,
@@ -1444,9 +1488,11 @@ impl Rule {
         if let Self::Complete {
             count,
             count_overriden,
+            highlights,
             ..
         } = self
         {
+            highlights.clear();
             *count = 0;
             *count_overriden = 0;
         }
@@ -1479,87 +1525,99 @@ impl Rule {
                 let mut edges = Edges::new();
 
                 ui.horizontal_top(|ui| {
-                    // Otherwise button content gets wrapped once space is running out
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    Frame::NONE
+                        .fill(Color32::YELLOW)
+                        .show(ui, |ui| {
+                            // Otherwise button content gets wrapped once space is running out
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
 
-                    let mut r = ui.add(Label::new(regular("When")));
-                    edges.add(r.rect, ButtonState::None);
-                    edges.commit_layer();
-                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                    r |= condition.ui(ui, *try_to_complete, &mut None, Color32::BLACK, &mut edges);
-                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                    r |= ui
-                        .vertical(|ui| {
-                            let r = ui.add(Label::new(regular("then mark as")));
-                            edges.add(r.rect, ButtonState::Active);
-                            let r = ui.add(Button::new(regular("and…")));
-                            if r.clicked() {
-                                *condition = condition.clone().and_incomplete();
+                            let mut r = ui.add(Label::new(regular("When")));
+                            edges.add(r.rect, ButtonState::None);
+                            edges.commit_layer();
+                            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                            r |= condition.ui(
+                                ui,
+                                *try_to_complete,
+                                &mut None,
+                                Color32::BLACK,
+                                &mut edges,
+                            );
+                            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                            r |= ui
+                                .vertical(|ui| {
+                                    let r = ui.add(Label::new(regular("then mark as")));
+                                    edges.add(r.rect, ButtonState::Active);
+                                    let r = ui.add(Button::new(regular("and…")));
+                                    if r.clicked() {
+                                        *condition = condition.clone().and_incomplete();
+                                    }
+                                    edges.add(r.rect, ButtonState::from_response(&r));
+                                    let r = ui.add(Button::new(regular("or…")));
+                                    if r.clicked() {
+                                        *condition = condition.clone().or_incomplete();
+                                    }
+                                    edges.add(r.rect, ButtonState::from_response(&r));
+                                })
+                                .response;
+                            let text_edit_category_response = ui.add(
+                                TextEdit::singleline(category)
+                                    .desired_width(MIN_TEXT_EDIT_WIDTH)
+                                    .clip_text(false)
+                                    .font(regular_font_id(ui)),
+                            );
+                            if category.is_empty() {
+                                missing_value_indicator(
+                                    ui,
+                                    text_edit_category_response.rect,
+                                    "missing_category".into(),
+                                    *try_to_complete,
+                                );
                             }
-                            edges.add(r.rect, ButtonState::from_response(&r));
-                            let r = ui.add(Button::new(regular("or…")));
-                            if r.clicked() {
-                                *condition = condition.clone().or_incomplete();
+                            r |= text_edit_category_response;
+
+                            // In case anything is missing for completion
+                            let (missing_values_text_bg_color, missing_values_text_color) = (
+                                animate_color_pulse(
+                                    ui.ctx(),
+                                    "missing_values_text_bg".into(),
+                                    *try_to_complete,
+                                    Color32::LIGHT_RED,
+                                    WARN_FADEOUT_TIME,
+                                ),
+                                animate_color_pulse(
+                                    ui.ctx(),
+                                    "missing_values_text".into(),
+                                    *try_to_complete,
+                                    Color32::BLACK,
+                                    4.0 * WARN_FADEOUT_TIME,
+                                ),
+                            );
+
+                            *try_to_complete = false;
+
+                            let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
+                            if complete_button_response.clicked()
+                                || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                *try_to_complete = true;
                             }
-                            edges.add(r.rect, ButtonState::from_response(&r));
+                            if completed_rule.is_none()
+                                && missing_values_text_color != Color32::TRANSPARENT
+                            {
+                                r |= ui.add(Label::new(
+                                    italic("Fill out all fields before creating the rule")
+                                        .background_color(missing_values_text_bg_color)
+                                        .color(missing_values_text_color),
+                                ));
+                            }
+                            r |= complete_button_response;
+
+                            let mut painter = ui.painter_at(r.rect);
+                            edges.paint(&mut painter);
+
+                            r
                         })
-                        .response;
-                    let text_edit_category_response = ui.add(
-                        TextEdit::singleline(category)
-                            .desired_width(MIN_TEXT_EDIT_WIDTH)
-                            .clip_text(false)
-                            .font(regular_font_id(ui)),
-                    );
-                    if category.is_empty() {
-                        missing_value_indicator(
-                            ui,
-                            text_edit_category_response.rect,
-                            "missing_category".into(),
-                            *try_to_complete,
-                        );
-                    }
-                    r |= text_edit_category_response;
-
-                    // In case anything is missing for completion
-                    let (missing_values_text_bg_color, missing_values_text_color) = (
-                        animate_color_pulse(
-                            ui.ctx(),
-                            "missing_values_text_bg".into(),
-                            *try_to_complete,
-                            Color32::LIGHT_RED,
-                            WARN_FADEOUT_TIME,
-                        ),
-                        animate_color_pulse(
-                            ui.ctx(),
-                            "missing_values_text".into(),
-                            *try_to_complete,
-                            Color32::BLACK,
-                            4.0 * WARN_FADEOUT_TIME,
-                        ),
-                    );
-
-                    *try_to_complete = false;
-
-                    let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
-                    if complete_button_response.clicked()
-                        || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter))
-                    {
-                        *try_to_complete = true;
-                    }
-                    if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
-                    {
-                        r |= ui.add(Label::new(
-                            italic("Fill out all fields before creating the rule")
-                                .background_color(missing_values_text_bg_color)
-                                .color(missing_values_text_color),
-                        ));
-                    }
-                    r |= complete_button_response;
-
-                    let mut painter = ui.painter_at(r.rect);
-                    edges.paint(&mut painter);
-
-                    r
+                        .inner
                 })
             }
 
@@ -1575,90 +1633,106 @@ impl Rule {
                 ..
             } => {
                 let response = ui.horizontal_top(|ui| {
-                    // When being dragged we render the rule in a more subtle color
-                    let color = match (&*enabled, &*dragged) {
-                        (false, _) | (_, ButtonState::Active) => Color32::GRAY,
-                        _ => Color32::PLACEHOLDER,
-                    };
+                    Frame::NONE
+                        .fill(Color32::YELLOW)
+                        .show(ui, |ui| {
+                            // When being dragged we render the rule in a more subtle color
+                            let color = match (&*enabled, &*dragged) {
+                                (false, _) | (_, ButtonState::Active) => Color32::GRAY,
+                                _ => Color32::PLACEHOLDER,
+                            };
 
-                    // grip handle for drag & drop
-                    let mut r = {
-                        let color = if *dragged == ButtonState::Hovered {
-                            Color32::BLACK
-                        } else if *hovered {
-                            Color32::DARK_GRAY
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        let grip_response = ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
-                        grip_response.dnd_set_drag_payload(rule_i);
-                        if grip_response.dragged() {
-                            *dragged = ButtonState::Active;
-                        } else {
-                            *dragged = ButtonState::from_response(&grip_response);
-                        }
-                        grip_response
-                    };
+                            // grip handle for drag & drop
+                            let mut r = {
+                                let color = if *dragged == ButtonState::Hovered {
+                                    Color32::BLACK
+                                } else if *hovered {
+                                    Color32::DARK_GRAY
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                let grip_response =
+                                    ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
+                                grip_response.dnd_set_drag_payload(rule_i);
+                                if grip_response.dragged() {
+                                    *dragged = ButtonState::Active;
+                                } else {
+                                    *dragged = ButtonState::from_response(&grip_response);
+                                }
+                                grip_response
+                            };
 
-                    // delete button
-                    {
-                        let button_color = if delete == &ButtonState::Hovered {
-                            Color32::BLACK
-                        } else if *hovered {
-                            Color32::DARK_GRAY
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        let delete_response = ui.add(
-                            Button::new(symbol(TRASH_SYMBOL).color(button_color)).frame(false),
-                        );
-                        *delete = ButtonState::from_response(&delete_response);
-                        r |= delete_response;
-                    }
+                            // delete button
+                            {
+                                let button_color = if delete == &ButtonState::Hovered {
+                                    Color32::BLACK
+                                } else if *hovered {
+                                    Color32::DARK_GRAY
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                let delete_response = ui.add(
+                                    Button::new(symbol(TRASH_SYMBOL).color(button_color))
+                                        .frame(false),
+                                );
+                                *delete = ButtonState::from_response(&delete_response);
+                                r |= delete_response;
+                            }
 
-                    // toggle switch
-                    let toggle_response = ui.add(widgets::toggle_switch::toggle(enabled));
-                    if toggle_response.changed() {
-                        App::request_update_annotations(ui.ctx());
-                    }
-                    r |= toggle_response;
+                            // toggle switch
+                            let toggle_response = ui.add(widgets::toggle_switch::toggle(enabled));
+                            if toggle_response.changed() {
+                                App::request_update_annotations(ui.ctx());
+                            }
+                            r |= toggle_response;
 
-                    let mut rule_text = ui.add(Label::new(regular("When").color(color)));
-                    rule_text |=
-                        condition.ui(ui, false, hovered_condition, color, &mut Edges::new());
-                    rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
-                    rule_text |= ui.add(Label::new(regular(category).color(color)));
-                    if *enabled {
-                        Frame::NONE
-                            .fill(Color32::LIGHT_GREEN)
-                            .corner_radius(CornerRadius::same(7))
-                            .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
-                            .show(ui, |ui| {
-                                ui.label(regular(&format!("{count}")));
-                            });
-                        if *count_overriden > 0 {
-                            Frame::NONE
-                                .fill(Color32::ORANGE.gamma_multiply(0.5))
-                                .corner_radius(CornerRadius::same(7))
-                                .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
-                                .show(ui, |ui| {
-                                    let r = ui.label(regular(&format!("{count_overriden}")));
-                                    ui.painter().hline(
-                                        r.rect.x_range(),
-                                        r.rect.center().y,
-                                        egui::Stroke::new(1.0, ui.style().visuals.text_color()),
-                                    );
-                                });
-                        }
-                    } else {
-                        ui.painter().hline(
-                            rule_text.rect.x_range(),
-                            rule_text.rect.center().y,
-                            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
-                        );
-                    }
-                    r |= rule_text;
-                    r
+                            let mut rule_text = ui.add(Label::new(regular("When").color(color)));
+                            rule_text |= condition.ui(
+                                ui,
+                                false,
+                                hovered_condition,
+                                color,
+                                &mut Edges::new(),
+                            );
+                            rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
+                            rule_text |= ui.add(Label::new(regular(category).color(color)));
+                            if *enabled {
+                                Frame::NONE
+                                    .fill(Color32::LIGHT_GREEN)
+                                    .corner_radius(CornerRadius::same(7))
+                                    .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                                    .show(ui, |ui| {
+                                        ui.label(regular(&format!("{count}")));
+                                    });
+                                if *count_overriden > 0 {
+                                    Frame::NONE
+                                        .fill(Color32::ORANGE.gamma_multiply(0.5))
+                                        .corner_radius(CornerRadius::same(7))
+                                        .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                                        .show(ui, |ui| {
+                                            let r =
+                                                ui.label(regular(&format!("{count_overriden}")));
+                                            ui.painter().hline(
+                                                r.rect.x_range(),
+                                                r.rect.center().y,
+                                                egui::Stroke::new(
+                                                    1.0,
+                                                    ui.style().visuals.text_color(),
+                                                ),
+                                            );
+                                        });
+                                }
+                            } else {
+                                ui.painter().hline(
+                                    rule_text.rect.x_range(),
+                                    rule_text.rect.center().y,
+                                    egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+                                );
+                            }
+                            r |= rule_text;
+                            r
+                        })
+                        .inner
                 });
                 *hovered = response.inner.hovered();
                 response
