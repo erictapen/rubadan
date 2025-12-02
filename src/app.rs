@@ -414,12 +414,10 @@ impl Annotation {
         known_categories: &indexmap::IndexSet<String>,
         minimap: &mut Minimap,
     ) {
-        if self.manual.is_some() {
-            if ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
-                self.manual = None;
-                App::request_update_annotations(ui.ctx());
-            };
-        }
+        if self.manual.is_some() && ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
+            self.manual = None;
+            App::request_update_annotations(ui.ctx());
+        };
         let response = egui::ComboBox::from_label("")
             .width(0.0)
             .icon(|_, _, _, _| {})
@@ -539,23 +537,23 @@ impl DataRow {
             if condition.matches(self) {
                 self.set_style_to_every_field(SelectStyle::Related2);
             }
-        } else if condition.as_ref().is_some_and(|c| c.matches(self)) {
-            if let Some(Condition::Plain(comp)) = condition {
-                match &comp.field {
-                    Field::Name => {
-                        if let Some(v) = self.name.as_mut() {
-                            v.style = SelectStyle::Related1;
-                        }
+        } else if condition.as_ref().is_some_and(|c| c.matches(self))
+            && let Some(Condition::Plain(comp)) = condition
+        {
+            match &comp.field {
+                Field::Name => {
+                    if let Some(v) = self.name.as_mut() {
+                        v.style = SelectStyle::Related1;
                     }
-                    Field::Purpose => {
-                        if let Some(v) = self.purpose.as_mut() {
-                            v.style = SelectStyle::Related1;
-                        }
+                }
+                Field::Purpose => {
+                    if let Some(v) = self.purpose.as_mut() {
+                        v.style = SelectStyle::Related1;
                     }
-                    Field::Iban => {
-                        if let Some(v) = self.iban.as_mut() {
-                            v.style = SelectStyle::Related1;
-                        }
+                }
+                Field::Iban => {
+                    if let Some(v) = self.iban.as_mut() {
+                        v.style = SelectStyle::Related1;
                     }
                 }
             }
@@ -795,15 +793,14 @@ impl App {
                     count_overriden,
                     ..
                 } = rule
+                    && rule_matches
                 {
-                    if rule_matches {
-                        // Earlier rules take precedence over later rules
-                        if row.annotation.derived.is_none() {
-                            row.annotation.set_derived(category.clone());
-                            *count += 1;
-                        } else {
-                            *count_overriden += 1;
-                        }
+                    // Earlier rules take precedence over later rules
+                    if row.annotation.derived.is_none() {
+                        row.annotation.set_derived(category.clone());
+                        *count += 1;
+                    } else {
+                        *count_overriden += 1;
                     }
                 }
             }
