@@ -36,6 +36,7 @@ use egui::{
     Painter, Rect, Response, RichText, StrokeKind, TextFormat, Ui, UiBuilder, WidgetText,
     text::LayoutJob,
 };
+use egui_extras::{Column, TableBuilder};
 use epaint::{CornerRadius, Pos2, RectShape, Vec2};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -703,7 +704,7 @@ impl App {
     }
     fn file_load_widget(&mut self, ui: &mut Ui) {
         Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.add(Label::new(regular("TODO processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or")));
                 let button_response = ui.button(bold("pick one."));
                 if button_response.clicked() {
@@ -724,8 +725,8 @@ impl App {
                         }
                     });
                 }
-                });
             });
+        });
     }
     fn file_load_panel(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         let widget_size = ui
@@ -854,269 +855,302 @@ impl App {
             d.insert_temp("update_annotations".into(), true);
         });
     }
-    fn minimap(&mut self, ui: &mut Ui, row_height: f32) {
+    fn minimap_panel(&mut self, ui: &mut Ui, row_height: f32) {
         egui::SidePanel::right("minimap")
             .resizable(false)
             .exact_width(200.0)
             .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
             .show_inside(ui, |ui| {
-                if let (Some(from), Some(mut visible_rect)) =
-                    (self.minimap.frame, self.minimap.visible_rect)
-                {
-                    let mut to = ui.max_rect();
-                    to.set_height(to.width() * from.aspect_ratio());
-                    let transform = emath::RectTransform::from_to(from, to);
-                    visible_rect = transform.transform_rect(visible_rect);
-                    // We try to keep the visible_rect inside the minimap
-                    let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
-
-                    for mut rect_shape in self.minimap.elements.drain(..) {
-                        // Expand the lines so that the gaps are closed
-                        rect_shape.rect = rect_shape
-                            .rect
-                            .expand2(Vec2::new(0.0, row_height - rect_shape.rect.height()));
-                        rect_shape.rect = transform.transform_rect(rect_shape.rect);
-                        rect_shape.rect = rect_shape.rect.translate(Vec2::new(0.0, -y_offset));
-                        ui.painter().add(rect_shape);
-                    }
-
-                    visible_rect = visible_rect.translate(Vec2::new(0.0, -y_offset));
-                    ui.painter().add(epaint::RectShape::filled(
-                        visible_rect,
-                        epaint::CornerRadius::same(5),
-                        Color32::LIGHT_GRAY.linear_multiply(0.5),
-                    ));
-                }
-
-                ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
-                    let clear_button = ui.add_sized(
-                        [ui.available_width(), 0.0],
-                        Button::new(regular("Clear data and load new file").color(Color32::WHITE))
-                            .fill(Color32::BLUE),
-                    );
-                    if clear_button.clicked() {
-                        self.data.lock().unwrap().clear();
-                    }
-
-                    ui.add_space(ui.available_height());
-                });
+                self.minimap(ui, row_height);
             });
     }
-    fn data_panel(&mut self, ctx: &egui::Context) {
-        use egui_extras::{Column, TableBuilder};
+    fn minimap(&mut self, ui: &mut Ui, row_height: f32) {
+        if let (Some(from), Some(mut visible_rect)) =
+            (self.minimap.frame, self.minimap.visible_rect)
+        {
+            let mut to = ui.max_rect();
+            to.set_height(to.width() * from.aspect_ratio());
+            let transform = emath::RectTransform::from_to(from, to);
+            visible_rect = transform.transform_rect(visible_rect);
+            // We try to keep the visible_rect inside the minimap
+            let y_offset = (visible_rect.max.y - ui.min_rect().height()).max(0.0);
 
+            for mut rect_shape in self.minimap.elements.drain(..) {
+                // Expand the lines so that the gaps are closed
+                rect_shape.rect = rect_shape
+                    .rect
+                    .expand2(Vec2::new(0.0, row_height - rect_shape.rect.height()));
+                rect_shape.rect = transform.transform_rect(rect_shape.rect);
+                rect_shape.rect = rect_shape.rect.translate(Vec2::new(0.0, -y_offset));
+                ui.painter().add(rect_shape);
+            }
+
+            visible_rect = visible_rect.translate(Vec2::new(0.0, -y_offset));
+            ui.painter().add(epaint::RectShape::filled(
+                visible_rect,
+                epaint::CornerRadius::same(5),
+                Color32::LIGHT_GRAY.linear_multiply(0.5),
+            ));
+        }
+
+        ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
+            let clear_button = ui.add_sized(
+                [ui.available_width(), 0.0],
+                Button::new(regular("Clear data and load new file").color(Color32::WHITE))
+                    .fill(Color32::BLUE),
+            );
+            if clear_button.clicked() {
+                self.data.lock().unwrap().clear();
+            }
+
+            ui.add_space(ui.available_height());
+        });
+    }
+    fn data_panel(&mut self, ctx: &egui::Context) {
         let data_panel_response = egui::TopBottomPanel::top("data_panel")
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y / PHI)
             .show(ctx, |ui| {
-
                 ui.spacing_mut().item_spacing.y = 0.0;
 
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_panel(ctx, ui);
                 } else {
-                    // Rows should be exactly as high as a button, as that is currently the
-                    // limiting factor, so we premeasure it in an invisible pass
-                    let row_height = ui
-                        .new_child(UiBuilder::new()
-                          .invisible()
-                          .layer_id(LayerId::background()))
-                        .add(Button::new(symbol("🗙")))
-                        .rect
-                        .height();
-
-                    // Predraw a shadow that's going to indicate that the data table isn't scrolled
-                    // entirely to the right
-                    if let Some(edge) = ctx.data(|d| {
-                        d.get_temp::<f32>("annotations_edge_for_shadow".into())
-                    }) {
-                        let rect = Rect::from_min_max(Pos2::new(edge, f32::MIN), Pos2::new(f32::MAX, f32::MAX));
-                        let shape = Frame::NONE.shadow(egui::Shadow {offset: [-10, 0], blur: SHADOW_WIDTH, spread: 0, color: Color32::LIGHT_GRAY}).paint(rect);
-                        ui.painter().add(shape);
-                    }
-
-                    if ctx.input(|i| i.screen_rect().width()) > 600.0 {
-                        self.minimap(ui, row_height);
-                    }
-                    // Clear state so that we can write down elements again
-                    self.minimap.clear();
-
-                    let mut offset_annotations = 0.0;
-                    let mut offset_data = 0.0;
-
-                    let sidepanel_response = egui::SidePanel::right("annotations_sidepanel")
-                        .resizable(false)
-                        .min_width(200.0)
-                        .frame(Frame::NONE.fill(ui.visuals().panel_fill).inner_margin(5.0))
-                        .show_inside(ui, |ui| {
-                            let annotations_response = TableBuilder::new(ui)
-                                .vertical_scroll_offset(self.data_vertical_scroll_offset)
-                                .cell_layout(Layout::left_to_right(Align::Center))
-                                // Optional: Hide when data_panel_response doesn't indicate hover
-                                .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                                .auto_shrink([false, false])
-                                .striped(true)
-                                .column(Column::remainder())
-                                .header(20.0, |mut header| {
-                                    header.col(|ui| {
-                                        ui.label(bold("Annotation"));
-                                    });
-                                })
-                                .body(|mut body| {
-                                    for entry in &mut *self.data.lock().unwrap() {
-                                        body.row(row_height, |mut row| {
-                                            // annotation
-                                            row.col(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    if entry.money.inner.credit {
-                                                        entry.annotation.ui(
-                                                            ui,
-                                                            &self.known_categories,
-                                                            &mut self.minimap,
-                                                        );
-                                                        ui.label(regular("→"));
-                                                        ui.label(regular( &self.account_name));
-                                                    } else {
-                                                        ui.label(regular( &self.account_name));
-                                                        ui.label(regular("→"));
-                                                        entry.annotation.ui(
-                                                            ui,
-                                                            &self.known_categories,
-                                                            &mut self.minimap,
-                                                        );
-                                                    }
-                                                });
-                                            });
-                                        });
-                                    }
-                                });
-                                offset_annotations = annotations_response.state.offset.y;
-
-                        });
-
-
-                    let horizontal_output = egui::ScrollArea::horizontal().show(ui, |ui| {
-
-                        // For some reason both the annotations and minimap SidePanel are shifted
-                        // 5px downwards, so we hackily counter this by moving the data table too…
-                        ui.allocate_space(Vec2::new(0.0, 5.0));
-
-                        let table_state = TableBuilder::new(ui)
-                            .vertical_scroll_offset(self.data_vertical_scroll_offset)
-                                .cell_layout(Layout::left_to_right(Align::Center))
-                            // Let the annotations table show a scrollbar instead
-                            .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                            .auto_shrink([false, false])
-                            .striped(true)
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::auto())
-                            .column(Column::remainder())
-                            .header(20.0, |mut header| {
-                                header.col(|ui| {
-                                         ui.label(bold("Date"));
-                                });
-                                header.col(|ui| {
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(bold("Amount"));
-                                    });
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("IBAN"));
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("Name"));
-                                });
-                                header.col(|ui| {
-                                    ui.label(bold("Purpose"));
-                                });
-                            })
-                            .body(|mut body| {
-                                for entry in &mut *self.data.lock().unwrap() {
-                                    body.row(row_height, |mut row| {
-
-                                        // date
-                                        let mut r = row.col(|ui| {
-                                            entry.date.ui(ui, &mut self.minimap);
-                                        }).1;
-                                        // amount
-                                        r |= row.col(|ui| {
-                                            ui.with_layout(
-                                                Layout::right_to_left(Align::Center),
-                                                |ui| {
-                                                    entry.money.ui(ui, &mut self.minimap);
-                                                },
-                                            );
-                                        }).1;
-                                        // iban
-                                        r |= row.col(|ui| {
-                                            if let Some(ibanh) = &entry.iban {
-                                                ibanh.ui(ui, &mut self.minimap);
-                                            }
-                                        }).1;
-                                        // name
-                                        r |= row.col(|ui| {
-                                            ui.painter().add(RectShape::filled(ui.max_rect().expand2(Vec2::new(0.5 * ui.style().spacing.item_spacing.x, 0.0)), CornerRadius::default(), Color32::YELLOW));
-                                            if let Some(nameh) = &entry.name {
-                                                nameh.ui(ui, &mut self.minimap);
-                                            }
-                                        }).1;
-                                        // purpose
-                                        r |= row.col(|ui| {
-                                            ui.painter().add(RectShape::filled(ui.max_rect().expand2(Vec2::new(0.5 * ui.style().spacing.item_spacing.x, 0.0)), CornerRadius::default(), Color32::YELLOW));
-                                            if let Some(purposeh) = &entry.purpose {
-                                                purposeh.ui(ui, &mut self.minimap);
-                                            }
-                                        }).1;
-
-                                        if r.hovered() {
-                                            self.hovered_widget = Some(entry.id);
-                                        }
-                                    });
-                                }
-                                self.minimap.frame =
-                                    Some(body.ui_mut().min_rect()).filter(|r| r.width() != 0.0);
-                            });
-                            offset_data = table_state.state.offset.y;
-
-                            if self.data_vertical_scroll_offset != offset_data {
-                               self.data_vertical_scroll_offset = offset_data;
-                            } else if self.data_vertical_scroll_offset != offset_annotations {
-                               self.data_vertical_scroll_offset = offset_annotations;
-                            }
-
-                        // For visualising which part of the minimap is visible in the data panel,
-                        // we add another shape to signify scroll state
-                        self.minimap.visible_rect = Some(table_state.inner_rect);
-                    });
-
-                    // If there was a need for scrolling, we render the shadow before everything
-                    // next frame
-                    if horizontal_output.content_size.x > horizontal_output.inner_rect.width() {
-                        // The remaining width before the ScrollArea is completely scrolled to the right.
-                        let remaining_right = horizontal_output.content_size.x -
-                            (horizontal_output.inner_rect.width() + horizontal_output.state.offset.x);
-                        let shadow_position = sidepanel_response.response.rect.min.x + f32::from(SHADOW_WIDTH) * (f32::max(0.0, 50.0 - remaining_right) / 50.0);
-                        ctx.data_mut(|d| {
-                            d.insert_temp("annotations_edge_for_shadow".into(), 
-                              shadow_position);
-                        });
-                    } else {
-                        ctx.data_mut(|d| {
-                            d.remove_temp::<f32>("annotations_edge_for_shadow".into());
-                        });
-                    }
-
-                    if let Some(ref mut visible_rect) = self.minimap.visible_rect {
-                        *visible_rect = visible_rect.intersect(horizontal_output.inner_rect);
-                    }
+                    self.data_table(ui);
                 }
             });
         if data_panel_response.response.hovered() {
             self.hints.push(Hint::Transactions);
         }
+    }
+    fn data_table(&mut self, ui: &mut Ui) {
+        // Rows should be exactly as high as a button, as that is currently the
+        // limiting factor, so we premeasure it in an invisible pass
+        let row_height = ui
+            .new_child(UiBuilder::new().invisible().layer_id(LayerId::background()))
+            .add(Button::new(symbol("🗙")))
+            .rect
+            .height();
+
+        // Predraw a shadow that's going to indicate that the data table isn't scrolled
+        // entirely to the right
+        if let Some(edge) = ui
+            .ctx()
+            .data(|d| d.get_temp::<f32>("annotations_edge_for_shadow".into()))
+        {
+            let rect = Rect::from_min_max(Pos2::new(edge, f32::MIN), Pos2::new(f32::MAX, f32::MAX));
+            let shape = Frame::NONE
+                .shadow(egui::Shadow {
+                    offset: [-10, 0],
+                    blur: SHADOW_WIDTH,
+                    spread: 0,
+                    color: Color32::LIGHT_GRAY,
+                })
+                .paint(rect);
+            ui.painter().add(shape);
+        }
+
+        if ui.ctx().input(|i| i.screen_rect().width()) > 600.0 {
+            self.minimap_panel(ui, row_height);
+        }
+        // Clear state so that we can write down elements again
+        self.minimap.clear();
+
+        let mut offset_annotations = 0.0;
+        let mut offset_data = 0.0;
+
+        let sidepanel_response = egui::SidePanel::right("annotations_sidepanel")
+            .resizable(false)
+            .min_width(200.0)
+            .frame(Frame::NONE.fill(ui.visuals().panel_fill).inner_margin(5.0))
+            .show_inside(ui, |ui| {
+                self.annotations_table(ui, &mut offset_annotations, row_height);
+            });
+
+        let horizontal_output = egui::ScrollArea::horizontal().show(ui, |ui| {
+            // For some reason both the annotations and minimap SidePanel are shifted
+            // 5px downwards, so we hackily counter this by moving the data table too…
+            ui.allocate_space(Vec2::new(0.0, 5.0));
+
+            let table_state = TableBuilder::new(ui)
+                .vertical_scroll_offset(self.data_vertical_scroll_offset)
+                .cell_layout(Layout::left_to_right(Align::Center))
+                // Let the annotations table show a scrollbar instead
+                .scroll_bar_visibility(
+                    egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                )
+                .auto_shrink([false, false])
+                .striped(true)
+                .column(Column::auto())
+                .column(Column::auto())
+                .column(Column::auto())
+                .column(Column::auto())
+                .column(Column::remainder())
+                .header(20.0, |mut header| {
+                    header.col(|ui| {
+                        ui.label(bold("Date"));
+                    });
+                    header.col(|ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(bold("Amount"));
+                        });
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("IBAN"));
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("Name"));
+                    });
+                    header.col(|ui| {
+                        ui.label(bold("Purpose"));
+                    });
+                })
+                .body(|mut body| {
+                    for entry in &mut *self.data.lock().unwrap() {
+                        body.row(row_height, |mut row| {
+                            // date
+                            let mut r = row
+                                .col(|ui| {
+                                    entry.date.ui(ui, &mut self.minimap);
+                                })
+                                .1;
+                            // amount
+                            r |= row
+                                .col(|ui| {
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        entry.money.ui(ui, &mut self.minimap);
+                                    });
+                                })
+                                .1;
+                            // iban
+                            r |= row
+                                .col(|ui| {
+                                    if let Some(ibanh) = &entry.iban {
+                                        ibanh.ui(ui, &mut self.minimap);
+                                    }
+                                })
+                                .1;
+                            // name
+                            r |= row
+                                .col(|ui| {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::YELLOW,
+                                    ));
+                                    if let Some(nameh) = &entry.name {
+                                        nameh.ui(ui, &mut self.minimap);
+                                    }
+                                })
+                                .1;
+                            // purpose
+                            r |= row
+                                .col(|ui| {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::YELLOW,
+                                    ));
+                                    if let Some(purposeh) = &entry.purpose {
+                                        purposeh.ui(ui, &mut self.minimap);
+                                    }
+                                })
+                                .1;
+
+                            if r.hovered() {
+                                self.hovered_widget = Some(entry.id);
+                            }
+                        });
+                    }
+                    self.minimap.frame =
+                        Some(body.ui_mut().min_rect()).filter(|r| r.width() != 0.0);
+                });
+            offset_data = table_state.state.offset.y;
+
+            if self.data_vertical_scroll_offset != offset_data {
+                self.data_vertical_scroll_offset = offset_data;
+            } else if self.data_vertical_scroll_offset != offset_annotations {
+                self.data_vertical_scroll_offset = offset_annotations;
+            }
+
+            // For visualising which part of the minimap is visible in the data panel,
+            // we add another shape to signify scroll state
+            self.minimap.visible_rect = Some(table_state.inner_rect);
+        });
+
+        // If there was a need for scrolling, we render the shadow before everything
+        // next frame
+        if horizontal_output.content_size.x > horizontal_output.inner_rect.width() {
+            // The remaining width before the ScrollArea is completely scrolled to the right.
+            let remaining_right = horizontal_output.content_size.x
+                - (horizontal_output.inner_rect.width() + horizontal_output.state.offset.x);
+            let shadow_position = sidepanel_response.response.rect.min.x
+                + f32::from(SHADOW_WIDTH) * (f32::max(0.0, 50.0 - remaining_right) / 50.0);
+            ui.ctx().data_mut(|d| {
+                d.insert_temp("annotations_edge_for_shadow".into(), shadow_position);
+            });
+        } else {
+            ui.ctx().data_mut(|d| {
+                d.remove_temp::<f32>("annotations_edge_for_shadow".into());
+            });
+        }
+
+        if let Some(ref mut visible_rect) = self.minimap.visible_rect {
+            *visible_rect = visible_rect.intersect(horizontal_output.inner_rect);
+        }
+    }
+    fn annotations_table(&mut self, ui: &mut Ui, offset_annotations: &mut f32, row_height: f32) {
+        let annotations_response = TableBuilder::new(ui)
+            .vertical_scroll_offset(self.data_vertical_scroll_offset)
+            .cell_layout(Layout::left_to_right(Align::Center))
+            // Optional: Hide when data_panel_response doesn't indicate hover
+            .scroll_bar_visibility(
+                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
+            )
+            .auto_shrink([false, false])
+            .striped(true)
+            .column(Column::remainder())
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.label(bold("Annotation"));
+                });
+            })
+            .body(|mut body| {
+                for entry in &mut *self.data.lock().unwrap() {
+                    body.row(row_height, |mut row| {
+                        // annotation
+                        row.col(|ui| {
+                            ui.horizontal(|ui| {
+                                if entry.money.inner.credit {
+                                    entry.annotation.ui(
+                                        ui,
+                                        &self.known_categories,
+                                        &mut self.minimap,
+                                    );
+                                    ui.label(regular("→"));
+                                    ui.label(regular(&self.account_name));
+                                } else {
+                                    ui.label(regular(&self.account_name));
+                                    ui.label(regular("→"));
+                                    entry.annotation.ui(
+                                        ui,
+                                        &self.known_categories,
+                                        &mut self.minimap,
+                                    );
+                                }
+                            });
+                        });
+                    });
+                }
+            });
+        *offset_annotations = annotations_response.state.offset.y;
     }
     /// Export into hledger format.
     /// At some point we might use a dedicated crate for that but I didn't find anything at the
