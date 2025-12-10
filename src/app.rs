@@ -563,7 +563,7 @@ impl DataRow {
     /// * `condition` - In case we just hover over a condition inside the a Rule
     fn highlight(&mut self, rule: &Option<Rule>, condition: &Option<Condition>) {
         self.clear_highlight();
-        if let Some(Rule::Complete { condition, .. }) = rule {
+        if let Some(Rule::Complete(CompleteRule { condition, .. })) = rule {
             // We highlight even when the rule is disabled, since we still give the user feedback for
             // what would happen if they'd enable it
             if condition.matches(self) {
@@ -817,13 +817,13 @@ impl App {
             for rule in &mut self.rules {
                 let rule_matches = rule.matches(row);
                 // We only use complete rules for annotation
-                if let Rule::Complete {
+                if let Rule::Complete(CompleteRule {
                     category,
                     count,
                     count_overriden,
                     highlights,
                     ..
-                } = rule
+                }) = rule
                     && rule_matches
                 {
                     // Earlier rules take precedence over later rules
@@ -844,7 +844,7 @@ impl App {
         }
         self.known_categories.clear();
         for rule in &self.rules {
-            if let Rule::Complete { category, .. } = rule {
+            if let Rule::Complete(CompleteRule { category, .. }) = rule {
                 self.known_categories.insert(category.clone());
             }
         }
@@ -1259,7 +1259,7 @@ impl App {
 
                     for (i, rule) in self.rules.iter_mut().enumerate() {
                         match *rule {
-                            Rule::Complete { dragged, .. } => {
+                            Rule::Complete(CompleteRule { dragged, .. }) => {
                                 let egui::InnerResponse {
                                     inner: rule_response,
                                     response,
@@ -1303,7 +1303,6 @@ impl App {
                                 last_rule_center = Some(response.rect.center().y);
 
                                 // If the rule itself is being dragged we draw a tooltip at the cursor
-                                // FIXME for some reason this adds a newline like gap after the rule
                                 if dragged == ButtonState::Active {
                                     let tooltip_layer_id = LayerId::new(
                                         egui::Order::Tooltip,
@@ -1447,28 +1446,13 @@ impl Hint {
 /// When purpose contains "Cafe" then mark as "expenses:4650bewirtungskosten"
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Rule {
-    Complete {
-        enabled: bool,
-        highlights: HashMap<Hid, RuleHighlight>,
-        condition: Condition,
-        category: String,
-        count: u64,
-        count_overriden: u64,
-        hovered: bool,
-        dragged: ButtonState,
-        delete: ButtonState,
-    },
-    Incomplete {
-        condition: Condition,
-        category: String,
-        /// Try to complete this rule next frame
-        try_to_complete: bool,
-    },
+    Complete(CompleteRule),
+    Incomplete(IncompleteRule),
 }
 
 impl Rule {
     fn complete(condition: Condition, category: String) -> Self {
-        Self::Complete {
+        Self::Complete(CompleteRule {
             enabled: true,
             highlights: HashMap::new(),
             condition,
@@ -1478,21 +1462,21 @@ impl Rule {
             hovered: false,
             dragged: Default::default(),
             delete: Default::default(),
-        }
+        })
     }
     fn incomplete(condition: Condition, category: String) -> Self {
-        Self::Incomplete {
+        Self::Incomplete(IncompleteRule {
             condition,
             category,
             try_to_complete: false,
-        }
+        })
     }
     fn try_into_complete(&self) -> Option<Self> {
-        if let Self::Incomplete {
+        if let Self::Incomplete(IncompleteRule {
             condition,
             category,
             ..
-        } = self
+        }) = self
         {
             if category.is_empty() {
                 return None;
@@ -1507,19 +1491,19 @@ impl Rule {
     fn to_delete(&self) -> bool {
         matches!(
             self,
-            Self::Complete {
+            Self::Complete(CompleteRule {
                 delete: ButtonState::Active,
                 ..
-            }
+            })
         )
     }
     fn clear_counts(&mut self) {
-        if let Self::Complete {
+        if let Self::Complete(CompleteRule {
             count,
             count_overriden,
             highlights,
             ..
-        } = self
+        }) = self
         {
             highlights.clear();
             *count = 0;
@@ -1532,10 +1516,10 @@ impl Rule {
         hovered_condition: &mut Option<Condition>,
         rule_i: usize,
     ) -> InnerResponse<Response> {
-        let completed_rule = if let Self::Incomplete {
+        let completed_rule = if let Self::Incomplete(IncompleteRule {
             try_to_complete: true,
             ..
-        } = self
+        }) = self
         {
             // Try to convert into Rule::Complete
             self.clone().try_into_complete()
@@ -1544,228 +1528,8 @@ impl Rule {
         };
 
         let response = match *self {
-            Self::Incomplete {
-                ref mut category,
-                ref mut condition,
-                ref mut try_to_complete,
-                ..
-            } => {
-                // We collect edges to be drawn and paint them at the end
-                let mut edges = Edges::new();
-
-                ui.horizontal_top(|ui| {
-                    Frame::NONE
-                        .fill(Color32::YELLOW)
-                        .show(ui, |ui| {
-                            // Otherwise button content gets wrapped once space is running out
-                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-
-                            let mut r = ui.add(Label::new(regular("When")));
-                            edges.add(r.rect, ButtonState::None);
-                            edges.commit_layer();
-                            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                            r |= condition.ui(
-                                ui,
-                                *try_to_complete,
-                                &mut None,
-                                Color32::BLACK,
-                                &mut edges,
-                            );
-                            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                            r |= ui
-                                .vertical(|ui| {
-                                    let r = ui.add(Label::new(regular("then mark as")));
-                                    edges.add(r.rect, ButtonState::Active);
-                                    let r = ui.add(Button::new(regular("and…")));
-                                    if r.clicked() {
-                                        *condition = condition.clone().and_incomplete();
-                                    }
-                                    edges.add(r.rect, ButtonState::from_response(&r));
-                                    let r = ui.add(Button::new(regular("or…")));
-                                    if r.clicked() {
-                                        *condition = condition.clone().or_incomplete();
-                                    }
-                                    edges.add(r.rect, ButtonState::from_response(&r));
-                                })
-                                .response;
-                            let text_edit_category_response = ui.add(
-                                TextEdit::singleline(category)
-                                    .desired_width(MIN_TEXT_EDIT_WIDTH)
-                                    .clip_text(false)
-                                    .font(regular_font_id(ui)),
-                            );
-                            if category.is_empty() {
-                                missing_value_indicator(
-                                    ui,
-                                    text_edit_category_response.rect,
-                                    "missing_category".into(),
-                                    *try_to_complete,
-                                );
-                            }
-                            r |= text_edit_category_response;
-
-                            // In case anything is missing for completion
-                            let (missing_values_text_bg_color, missing_values_text_color) = (
-                                animate_color_pulse(
-                                    ui.ctx(),
-                                    "missing_values_text_bg".into(),
-                                    *try_to_complete,
-                                    Color32::LIGHT_RED,
-                                    WARN_FADEOUT_TIME,
-                                ),
-                                animate_color_pulse(
-                                    ui.ctx(),
-                                    "missing_values_text".into(),
-                                    *try_to_complete,
-                                    Color32::BLACK,
-                                    4.0 * WARN_FADEOUT_TIME,
-                                ),
-                            );
-
-                            *try_to_complete = false;
-
-                            let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
-                            if complete_button_response.clicked()
-                                || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                *try_to_complete = true;
-                            }
-                            if completed_rule.is_none()
-                                && missing_values_text_color != Color32::TRANSPARENT
-                            {
-                                r |= ui.add(Label::new(
-                                    italic("Fill out all fields before creating the rule")
-                                        .background_color(missing_values_text_bg_color)
-                                        .color(missing_values_text_color),
-                                ));
-                            }
-                            r |= complete_button_response;
-
-                            let mut painter = ui.painter_at(r.rect);
-                            edges.paint(&mut painter);
-
-                            r
-                        })
-                        .inner
-                })
-            }
-
-            Rule::Complete {
-                ref mut enabled,
-                ref mut dragged,
-                ref mut hovered,
-                ref mut condition,
-                ref mut delete,
-                ref category,
-                ref count,
-                ref count_overriden,
-                ..
-            } => {
-                let response = ui.horizontal_top(|ui| {
-                    Frame::NONE
-                        .fill(Color32::YELLOW)
-                        .show(ui, |ui| {
-                            // When being dragged we render the rule in a more subtle color
-                            let color = match (&*enabled, &*dragged) {
-                                (false, _) | (_, ButtonState::Active) => Color32::GRAY,
-                                _ => Color32::PLACEHOLDER,
-                            };
-
-                            // grip handle for drag & drop
-                            let mut r = {
-                                let color = if *dragged == ButtonState::Hovered {
-                                    Color32::BLACK
-                                } else if *hovered {
-                                    Color32::DARK_GRAY
-                                } else {
-                                    Color32::TRANSPARENT
-                                };
-                                let grip_response =
-                                    ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
-                                grip_response.dnd_set_drag_payload(rule_i);
-                                if grip_response.dragged() {
-                                    *dragged = ButtonState::Active;
-                                } else {
-                                    *dragged = ButtonState::from_response(&grip_response);
-                                }
-                                grip_response
-                            };
-
-                            // delete button
-                            {
-                                let button_color = if delete == &ButtonState::Hovered {
-                                    Color32::BLACK
-                                } else if *hovered {
-                                    Color32::DARK_GRAY
-                                } else {
-                                    Color32::TRANSPARENT
-                                };
-                                let delete_response = ui.add(
-                                    Button::new(symbol(TRASH_SYMBOL).color(button_color))
-                                        .frame(false),
-                                );
-                                *delete = ButtonState::from_response(&delete_response);
-                                r |= delete_response;
-                            }
-
-                            // toggle switch
-                            let toggle_response = ui.add(widgets::toggle_switch::toggle(enabled));
-                            if toggle_response.changed() {
-                                App::request_update_annotations(ui.ctx());
-                            }
-                            r |= toggle_response;
-
-                            let mut rule_text = ui.add(Label::new(regular("When").color(color)));
-                            rule_text |= condition.ui(
-                                ui,
-                                false,
-                                hovered_condition,
-                                color,
-                                &mut Edges::new(),
-                            );
-                            rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
-                            rule_text |= ui.add(Label::new(regular(category).color(color)));
-                            if *enabled {
-                                Frame::NONE
-                                    .fill(Color32::LIGHT_GREEN)
-                                    .corner_radius(CornerRadius::same(7))
-                                    .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
-                                    .show(ui, |ui| {
-                                        ui.label(regular(&format!("{count}")));
-                                    });
-                                if *count_overriden > 0 {
-                                    Frame::NONE
-                                        .fill(Color32::ORANGE.gamma_multiply(0.5))
-                                        .corner_radius(CornerRadius::same(7))
-                                        .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
-                                        .show(ui, |ui| {
-                                            let r =
-                                                ui.label(regular(&format!("{count_overriden}")));
-                                            ui.painter().hline(
-                                                r.rect.x_range(),
-                                                r.rect.center().y,
-                                                egui::Stroke::new(
-                                                    1.0,
-                                                    ui.style().visuals.text_color(),
-                                                ),
-                                            );
-                                        });
-                                }
-                            } else {
-                                ui.painter().hline(
-                                    rule_text.rect.x_range(),
-                                    rule_text.rect.center().y,
-                                    egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
-                                );
-                            }
-                            r |= rule_text;
-                            r
-                        })
-                        .inner
-                });
-                *hovered = response.inner.hovered();
-                response
-            }
+            Self::Incomplete(ref mut i) => i.ui(ui, &completed_rule),
+            Rule::Complete(ref mut c) => c.ui(ui, hovered_condition, rule_i),
         };
 
         if let Some(completed_rule) = completed_rule {
@@ -1777,29 +1541,261 @@ impl Rule {
     }
     fn matches(&self, entry: &DataRow) -> bool {
         match self {
-            Rule::Complete {
+            Rule::Complete(CompleteRule {
                 enabled, condition, ..
-            } => *enabled && condition.matches(entry),
-            Rule::Incomplete { condition, .. } => condition.matches(entry),
+            }) => *enabled && condition.matches(entry),
+            Rule::Incomplete(IncompleteRule { condition, .. }) => condition.matches(entry),
+        }
+    }
+}
+/// Some basic string representaton for drag&drop preview
+impl Display for Rule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Complete(c) => write!(f, "{c}"),
+            Self::Incomplete(i) => write!(f, "{i}"),
         }
     }
 }
 
 /// Some basic string representaton for drag&drop preview
-impl Display for Rule {
+impl Display for CompleteRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Complete {
-                category,
-                condition,
-                ..
-            } => write!(f, "When {condition} then mark as {category}"),
-            Self::Incomplete {
-                category,
-                condition,
-                ..
-            } => write!(f, "When {condition} then mark as {category}"),
-        }
+        write!(f, "When {} then mark as {}", self.condition, self.category)
+    }
+}
+
+/// Some basic string representaton for drag&drop preview
+impl Display for IncompleteRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "When {} then mark as {}", self.condition, self.category)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct CompleteRule {
+    enabled: bool,
+    highlights: HashMap<Hid, RuleHighlight>,
+    condition: Condition,
+    category: String,
+    count: u64,
+    count_overriden: u64,
+    hovered: bool,
+    dragged: ButtonState,
+    delete: ButtonState,
+}
+
+impl CompleteRule {
+    fn ui(
+        &mut self,
+        ui: &mut Ui,
+        hovered_condition: &mut Option<Condition>,
+        rule_i: usize,
+    ) -> InnerResponse<Response> {
+        let response = ui.horizontal_top(|ui| {
+            Frame::NONE
+                .fill(Color32::YELLOW)
+                .show(ui, |ui| {
+                    // When being dragged we render the rule in a more subtle color
+                    let color = match (self.enabled, self.dragged) {
+                        (false, _) | (_, ButtonState::Active) => Color32::GRAY,
+                        _ => Color32::PLACEHOLDER,
+                    };
+
+                    // grip handle for drag & drop
+                    let mut r = {
+                        let color = if self.dragged == ButtonState::Hovered {
+                            Color32::BLACK
+                        } else if self.hovered {
+                            Color32::DARK_GRAY
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let grip_response = ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
+                        grip_response.dnd_set_drag_payload(rule_i);
+                        if grip_response.dragged() {
+                            self.dragged = ButtonState::Active;
+                        } else {
+                            self.dragged = ButtonState::from_response(&grip_response);
+                        }
+                        grip_response
+                    };
+
+                    // delete button
+                    {
+                        let button_color = if self.delete == ButtonState::Hovered {
+                            Color32::BLACK
+                        } else if self.hovered {
+                            Color32::DARK_GRAY
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let delete_response = ui.add(
+                            Button::new(symbol(TRASH_SYMBOL).color(button_color)).frame(false),
+                        );
+                        self.delete = ButtonState::from_response(&delete_response);
+                        r |= delete_response;
+                    }
+
+                    // toggle switch
+                    let toggle_response = ui.add(widgets::toggle_switch::toggle(&mut self.enabled));
+                    if toggle_response.changed() {
+                        App::request_update_annotations(ui.ctx());
+                    }
+                    r |= toggle_response;
+
+                    let mut rule_text = ui.add(Label::new(regular("When").color(color)));
+                    rule_text |=
+                        self.condition
+                            .ui(ui, false, hovered_condition, color, &mut Edges::new());
+                    rule_text |= ui.add(Label::new(regular("then mark as").color(color)));
+                    rule_text |= ui.add(Label::new(regular(&self.category).color(color)));
+                    if self.enabled {
+                        Frame::NONE
+                            .fill(Color32::LIGHT_GREEN)
+                            .corner_radius(CornerRadius::same(7))
+                            .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                            .show(ui, |ui| {
+                                ui.label(regular(&format!("{}", self.count)));
+                            });
+                        if self.count_overriden > 0 {
+                            Frame::NONE
+                                .fill(Color32::ORANGE.gamma_multiply(0.5))
+                                .corner_radius(CornerRadius::same(7))
+                                .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
+                                .show(ui, |ui| {
+                                    let r = ui.label(regular(&format!("{}", self.count_overriden)));
+                                    ui.painter().hline(
+                                        r.rect.x_range(),
+                                        r.rect.center().y,
+                                        egui::Stroke::new(1.0, ui.style().visuals.text_color()),
+                                    );
+                                });
+                        }
+                    } else {
+                        ui.painter().hline(
+                            rule_text.rect.x_range(),
+                            rule_text.rect.center().y,
+                            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+                        );
+                    }
+                    r |= rule_text;
+                    r
+                })
+                .inner
+        });
+        self.hovered = response.inner.hovered();
+        response
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct IncompleteRule {
+    condition: Condition,
+    category: String,
+    /// Try to complete this rule next frame
+    try_to_complete: bool,
+}
+
+impl IncompleteRule {
+    fn ui(&mut self, ui: &mut Ui, completed_rule: &Option<Rule>) -> InnerResponse<Response> {
+        // We collect edges to be drawn and paint them at the end
+        let mut edges = Edges::new();
+
+        ui.horizontal_top(|ui| {
+            Frame::NONE
+                .fill(Color32::YELLOW)
+                .show(ui, |ui| {
+                    // Otherwise button content gets wrapped once space is running out
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+
+                    let mut r = ui.add(Label::new(regular("When")));
+                    edges.add(r.rect, ButtonState::None);
+                    edges.commit_layer();
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                    r |= self.condition.ui(
+                        ui,
+                        self.try_to_complete,
+                        &mut None,
+                        Color32::BLACK,
+                        &mut edges,
+                    );
+                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+                    r |= ui
+                        .vertical(|ui| {
+                            let r = ui.add(Label::new(regular("then mark as")));
+                            edges.add(r.rect, ButtonState::Active);
+                            let r = ui.add(Button::new(regular("and…")));
+                            if r.clicked() {
+                                self.condition = self.condition.clone().and_incomplete();
+                            }
+                            edges.add(r.rect, ButtonState::from_response(&r));
+                            let r = ui.add(Button::new(regular("or…")));
+                            if r.clicked() {
+                                self.condition = self.condition.clone().or_incomplete();
+                            }
+                            edges.add(r.rect, ButtonState::from_response(&r));
+                        })
+                        .response;
+                    let text_edit_category_response = ui.add(
+                        TextEdit::singleline(&mut self.category)
+                            .desired_width(MIN_TEXT_EDIT_WIDTH)
+                            .clip_text(false)
+                            .font(regular_font_id(ui)),
+                    );
+                    if self.category.is_empty() {
+                        missing_value_indicator(
+                            ui,
+                            text_edit_category_response.rect,
+                            "missing_category".into(),
+                            self.try_to_complete,
+                        );
+                    }
+                    r |= text_edit_category_response;
+
+                    // In case anything is missing for completion
+                    let (missing_values_text_bg_color, missing_values_text_color) = (
+                        animate_color_pulse(
+                            ui.ctx(),
+                            "missing_values_text_bg".into(),
+                            self.try_to_complete,
+                            Color32::LIGHT_RED,
+                            WARN_FADEOUT_TIME,
+                        ),
+                        animate_color_pulse(
+                            ui.ctx(),
+                            "missing_values_text".into(),
+                            self.try_to_complete,
+                            Color32::BLACK,
+                            4.0 * WARN_FADEOUT_TIME,
+                        ),
+                    );
+
+                    self.try_to_complete = false;
+
+                    let complete_button_response = ui.button(symbol(CHECK_SYMBOL));
+                    if complete_button_response.clicked()
+                        || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter))
+                    {
+                        self.try_to_complete = true;
+                    }
+                    if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
+                    {
+                        r |= ui.add(Label::new(
+                            italic("Fill out all fields before creating the rule")
+                                .background_color(missing_values_text_bg_color)
+                                .color(missing_values_text_color),
+                        ));
+                    }
+                    r |= complete_button_response;
+
+                    let mut painter = ui.painter_at(r.rect);
+                    edges.paint(&mut painter);
+
+                    r
+                })
+                .inner
+        })
     }
 }
 
@@ -1848,20 +1844,16 @@ enum Condition {
         op: BooleanOp,
         cancel_hovered: bool,
     },
-    Incomplete {
-        field: Option<Field>,
-        ctype: Option<ComparisonType>,
-        value: String,
-    },
+    Incomplete(IncompleteCondition),
 }
 
 impl Condition {
     fn incomplete() -> Self {
-        Self::Incomplete {
+        Self::Incomplete(IncompleteCondition {
             field: None,
             ctype: None,
             value: String::new(),
-        }
+        })
     }
     fn boolean(condition1: Condition, condition2: Condition, op: BooleanOp) -> Self {
         Self::Boolean {
@@ -1897,11 +1889,11 @@ impl Condition {
     }
     fn try_into_complete(&self) -> Option<Self> {
         match self {
-            Self::Incomplete {
+            Self::Incomplete(IncompleteCondition {
                 field: Some(field),
                 ctype: Some(ctype),
                 value,
-            } => {
+            }) => {
                 if value.is_empty() {
                     None
                 } else {
@@ -1941,15 +1933,6 @@ impl Condition {
         color: Color32,
         edges: &mut Edges,
     ) -> Response {
-        // if let Self::Boolean {
-        //     condition1,
-        //     cancelled: true,
-        //     ..
-        // } = self
-        // {
-        //     *self = *std::mem::take(condition1);
-        // }
-
         match self {
             Self::Plain(Comparison {
                 field,
@@ -1966,136 +1949,7 @@ impl Condition {
                 }
                 response
             }
-            Self::Incomplete {
-                field,
-                ctype,
-                value,
-                ..
-            } => {
-                let mut r;
-
-                // field
-                {
-                    let mut set_field_to_none = false;
-                    r = match field {
-                        None => {
-                            let r = ui
-                                .vertical(|ui| {
-                                    for field_variant in Field::iter() {
-                                        let r = ui.add(Button::new(regular(
-                                            format!("{field_variant}").as_str(),
-                                        )));
-                                        if r.clicked() {
-                                            *field = Some(field_variant);
-                                        }
-                                        edges.add(r.rect, ButtonState::from_response(&r));
-                                    }
-                                    edges.commit_layer();
-                                })
-                                .response;
-                            missing_value_indicator(
-                                ui,
-                                r.rect,
-                                "missing_field".into(),
-                                try_to_complete,
-                            );
-                            r
-                        }
-                        Some(selected_field) => {
-                            let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
-                            if r.clicked() {
-                                set_field_to_none = true;
-                            }
-                            r |= ui.add(Label::new(regular(format!("{selected_field}").as_str())));
-                            edges.add(r.rect, ButtonState::Active);
-                            edges.commit_layer();
-                            r
-                        }
-                    };
-                    if set_field_to_none {
-                        *field = None;
-                    }
-                }
-
-                // Add an intermediate knot for the edges to avoid a many -> many
-                {
-                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                    edges.add(
-                        Rect::from_pos(r.rect.right_center() + Vec2::new(MIN_CURVE_WIDTH, 0.0)),
-                        Default::default(),
-                    );
-                    edges.commit_layer();
-                    ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-                }
-
-                // ctype
-                {
-                    let mut set_ctype_to_none = false;
-                    r |= match ctype {
-                        None => {
-                            let r = ui
-                                .vertical(|ui| {
-                                    for ctype_variant in ComparisonType::iter() {
-                                        let r =
-                                            ui.button(regular(format!("{ctype_variant}").as_str()));
-                                        if r.clicked() {
-                                            *ctype = Some(ctype_variant);
-                                        }
-                                        edges.add(r.rect, ButtonState::from_response(&r));
-                                    }
-                                    edges.commit_layer();
-                                })
-                                .response;
-                            missing_value_indicator(
-                                ui,
-                                r.rect,
-                                "missing_ctype".into(),
-                                try_to_complete,
-                            );
-                            r
-                        }
-                        Some(selected_ctype) => {
-                            let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
-                            if r.clicked() {
-                                set_ctype_to_none = true;
-                            }
-                            r |= ui.add(Label::new(regular(format!("{selected_ctype}").as_str())));
-                            edges.add(r.rect, ButtonState::Active);
-                            edges.commit_layer();
-                            r
-                        }
-                    };
-                    if set_ctype_to_none {
-                        *ctype = None;
-                    }
-                }
-
-                ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
-
-                // value
-                {
-                    let value_response = ui.add(
-                        TextEdit::singleline(&mut (*value))
-                            .desired_width(MIN_TEXT_EDIT_WIDTH)
-                            .clip_text(false)
-                            .font(regular_font_id(ui)),
-                    );
-                    if value.is_empty() {
-                        missing_value_indicator(
-                            ui,
-                            value_response.rect,
-                            "missing_value".into(),
-                            try_to_complete,
-                        );
-                    }
-
-                    edges.add(value_response.rect, Default::default());
-                    edges.commit_layer();
-
-                    r |= value_response;
-                }
-                r
-            }
+            Self::Incomplete(i) => i.ui(ui, try_to_complete, edges),
             Self::Boolean {
                 condition1: c1,
                 condition2: c2,
@@ -2175,6 +2029,129 @@ impl Display for Condition {
             } => write!(f, "{condition1} or {condition2}"),
             Self::Incomplete { .. } => unimplemented!(),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct IncompleteCondition {
+    field: Option<Field>,
+    ctype: Option<ComparisonType>,
+    value: String,
+}
+
+impl IncompleteCondition {
+    fn ui(&mut self, ui: &mut Ui, try_to_complete: bool, edges: &mut Edges) -> Response {
+        let mut r;
+
+        // field
+        {
+            let mut set_field_to_none = false;
+            r = match &self.field {
+                None => {
+                    let r = ui
+                        .vertical(|ui| {
+                            for field_variant in Field::iter() {
+                                let r = ui
+                                    .add(Button::new(regular(format!("{field_variant}").as_str())));
+                                if r.clicked() {
+                                    self.field = Some(field_variant);
+                                }
+                                edges.add(r.rect, ButtonState::from_response(&r));
+                            }
+                            edges.commit_layer();
+                        })
+                        .response;
+                    missing_value_indicator(ui, r.rect, "missing_field".into(), try_to_complete);
+                    r
+                }
+                Some(selected_field) => {
+                    let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                    if r.clicked() {
+                        set_field_to_none = true;
+                    }
+                    r |= ui.add(Label::new(regular(format!("{selected_field}").as_str())));
+                    edges.add(r.rect, ButtonState::Active);
+                    edges.commit_layer();
+                    r
+                }
+            };
+            if set_field_to_none {
+                self.field = None;
+            }
+        }
+
+        // Add an intermediate knot for the edges to avoid a many -> many
+        {
+            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+            edges.add(
+                Rect::from_pos(r.rect.right_center() + Vec2::new(MIN_CURVE_WIDTH, 0.0)),
+                Default::default(),
+            );
+            edges.commit_layer();
+            ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+        }
+
+        // ctype
+        {
+            let mut set_ctype_to_none = false;
+            r |= match &self.ctype {
+                None => {
+                    let r = ui
+                        .vertical(|ui| {
+                            for ctype_variant in ComparisonType::iter() {
+                                let r = ui.button(regular(format!("{ctype_variant}").as_str()));
+                                if r.clicked() {
+                                    self.ctype = Some(ctype_variant);
+                                }
+                                edges.add(r.rect, ButtonState::from_response(&r));
+                            }
+                            edges.commit_layer();
+                        })
+                        .response;
+                    missing_value_indicator(ui, r.rect, "missing_ctype".into(), try_to_complete);
+                    r
+                }
+                Some(selected_ctype) => {
+                    let mut r = ui.add(Button::new(symbol(CANCEL_SYMBOL)));
+                    if r.clicked() {
+                        set_ctype_to_none = true;
+                    }
+                    r |= ui.add(Label::new(regular(format!("{selected_ctype}").as_str())));
+                    edges.add(r.rect, ButtonState::Active);
+                    edges.commit_layer();
+                    r
+                }
+            };
+            if set_ctype_to_none {
+                self.ctype = None;
+            }
+        }
+
+        ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
+
+        // value
+        {
+            let value_response = ui.add(
+                TextEdit::singleline(&mut self.value)
+                    .desired_width(MIN_TEXT_EDIT_WIDTH)
+                    .clip_text(false)
+                    .font(regular_font_id(ui)),
+            );
+            if self.value.is_empty() {
+                missing_value_indicator(
+                    ui,
+                    value_response.rect,
+                    "missing_value".into(),
+                    try_to_complete,
+                );
+            }
+
+            edges.add(value_response.rect, Default::default());
+            edges.commit_layer();
+
+            r |= value_response;
+        }
+        r
     }
 }
 
