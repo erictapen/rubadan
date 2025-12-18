@@ -641,7 +641,7 @@ impl Default for App {
         Self {
             data: Default::default(),
             data_vertical_scroll_offset: 0.0,
-            rules: Default::default(),
+            rules: vec![Rule::incomplete(Condition::incomplete(), "".to_string())],
             account_name: "assets".to_string(),
             unmatched_rows: 0,
             known_categories: Default::default(),
@@ -664,32 +664,6 @@ impl App {
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         let mut result = Self {
-            rules: vec![
-                Rule::complete(
-                    Condition::Plain(Comparison {
-                        field: Field::Purpose,
-                        ctype: ComparisonType::Contains,
-                        value: "MINT".to_string(),
-                    }),
-                    "expenses:test".to_string(),
-                ),
-                Rule::complete(
-                    Condition::Plain(Comparison {
-                        field: Field::Purpose,
-                        ctype: ComparisonType::Contains,
-                        value: "spezifiziert".to_string(),
-                    }),
-                    "income:another".to_string(),
-                ),
-                Rule::complete(
-                    Condition::Plain(Comparison {
-                        field: Field::Purpose,
-                        ctype: ComparisonType::Contains,
-                        value: "Buchung".to_string(),
-                    }),
-                    "income".to_string(),
-                ),
-            ],
             data: Arc::new(Mutex::new(parse_mt940_file(
                 // This example file is from
                 // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
