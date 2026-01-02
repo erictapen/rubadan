@@ -1014,7 +1014,7 @@ impl App {
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::YELLOW,
+                                        Color32::TRANSPARENT,
                                     ));
                                     if let Some(nameh) = &entry.name {
                                         nameh.ui(ui, &mut self.minimap);
@@ -1030,7 +1030,7 @@ impl App {
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::YELLOW,
+                                        Color32::TRANSPARENT,
                                     ));
                                     if let Some(purposeh) = &entry.purpose {
                                         purposeh.ui(ui, &mut self.minimap);
@@ -1568,7 +1568,7 @@ impl CompleteRule {
     ) -> InnerResponse<Response> {
         let response = ui.horizontal_top(|ui| {
             Frame::NONE
-                .fill(Color32::YELLOW)
+                .fill(Color32::TRANSPARENT)
                 .show(ui, |ui| {
                     // When being dragged we render the rule in a more subtle color
                     let color = match (self.enabled, self.dragged) {
@@ -1678,7 +1678,7 @@ impl IncompleteRule {
 
         ui.horizontal_top(|ui| {
             Frame::NONE
-                .fill(Color32::YELLOW)
+                .fill(Color32::TRANSPARENT)
                 .show(ui, |ui| {
                     // Otherwise button content gets wrapped once space is running out
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
