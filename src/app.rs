@@ -642,6 +642,7 @@ impl Default for App {
             data: Default::default(),
             data_vertical_scroll_offset: 0.0,
             rules: vec![Rule::incomplete(Condition::incomplete(), "".to_string())],
+            // This default makes sense for hledger
             account_name: "assets".to_string(),
             unmatched_rows: 0,
             known_categories: Default::default(),
@@ -660,6 +661,8 @@ impl App {
 
         // Force lightmode theme for now until we have darkmode colors
         cc.egui_ctx.set_theme(egui::Theme::Light);
+
+        // cc.egui_ctx.set_debug_on_hover(true);
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
@@ -833,7 +836,6 @@ impl App {
         egui::SidePanel::right("minimap")
             .resizable(false)
             .exact_width(200.0)
-            .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
             .show_inside(ui, |ui| {
                 self.minimap(ui, row_height);
             });
