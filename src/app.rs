@@ -842,8 +842,9 @@ impl App {
         if let (Some(from), Some(mut visible_rect)) =
             (self.minimap.frame, self.minimap.visible_rect)
         {
+            // The Rect we paint in
             let mut to = ui.max_rect();
-            to.set_height(to.width() * from.aspect_ratio());
+            to.set_height(to.width() / from.aspect_ratio());
             let transform = emath::RectTransform::from_to(from, to);
             visible_rect = transform.transform_rect(visible_rect);
             // We try to keep the visible_rect inside the minimap
