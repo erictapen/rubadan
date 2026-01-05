@@ -439,47 +439,52 @@ impl Annotation {
         known_categories: &indexmap::IndexSet<String>,
         minimap: &mut Minimap,
     ) {
-        if self.manual.is_some() && ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
-            self.manual = None;
-            App::request_update_annotations(ui.ctx());
-        };
-        let response = egui::ComboBox::from_label("")
-            .width(0.0)
-            .icon(|_, _, _, _| {})
-            .selected_text(regular(self.category().as_deref().unwrap_or("")))
-            .show_ui(ui, |ui: &mut Ui| {
-                let mut changed = false;
-                for category in known_categories {
-                    changed |= ui
-                        .selectable_value(
-                            &mut self.manual,
-                            Some(category.clone()),
-                            regular(category),
-                        )
-                        .changed();
-                }
-                changed
-            });
-        if let Some(true) = response.inner {
-            App::request_update_annotations(ui.ctx());
-        }
-        let rect = response.response.rect;
-        // derived takes precedence, so we strike through the label again
-        if self.derived.is_some() && self.manual.is_some() {
-            ui.painter().hline(
-                rect.x_range(),
-                rect.center().y,
-                egui::Stroke::new(2.0, Color32::BLACK),
-            );
-        }
-        if let Annotation {
-            manual: Some(_),
-            derived: Some(hstring),
-            ..
-        } = self
-        {
-            hstring.ui(ui, minimap);
-        }
+        ui.scope_builder(UiBuilder::new(), |ui| {
+            if known_categories.is_empty() {
+                ui.disable();
+            }
+            if self.manual.is_some() && ui.add(Button::new(symbol(CANCEL_SYMBOL))).clicked() {
+                self.manual = None;
+                App::request_update_annotations(ui.ctx());
+            };
+            let response = egui::ComboBox::from_label("")
+                .width(50.0)
+                .icon(|_, _, _, _| {})
+                .selected_text(regular(self.category().as_deref().unwrap_or("")))
+                .show_ui(ui, |ui: &mut Ui| {
+                    let mut changed = false;
+                    for category in known_categories {
+                        changed |= ui
+                            .selectable_value(
+                                &mut self.manual,
+                                Some(category.clone()),
+                                regular(category),
+                            )
+                            .changed();
+                    }
+                    changed
+                });
+            if let Some(true) = response.inner {
+                App::request_update_annotations(ui.ctx());
+            }
+            let rect = response.response.rect;
+            // derived takes precedence, so we strike through the label again
+            if self.derived.is_some() && self.manual.is_some() {
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.center().y,
+                    egui::Stroke::new(2.0, Color32::BLACK),
+                );
+            }
+            if let Annotation {
+                manual: Some(_),
+                derived: Some(hstring),
+                ..
+            } = self
+            {
+                hstring.ui(ui, minimap);
+            }
+        });
     }
 }
 
@@ -662,7 +667,7 @@ impl App {
         // Force lightmode theme for now until we have darkmode colors
         cc.egui_ctx.set_theme(egui::Theme::Light);
 
-        // cc.egui_ctx.set_debug_on_hover(true);
+        cc.egui_ctx.set_debug_on_hover(true);
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
@@ -782,11 +787,15 @@ impl App {
         });
     }
     /// Annotate data rows and update highlights
-    /// The idea is to not run this every frame
+    /// The idea is to not run this every frame, but only when rules, overrides or data change
     fn update_annotations(&mut self) {
         info!("Updating annotations");
+        self.known_categories.clear();
         for rule in &mut self.rules {
             rule.clear_counts();
+            if let Rule::Complete(CompleteRule { category, .. }) = rule {
+                self.known_categories.insert(category.clone());
+            }
         }
         self.unmatched_rows = 0;
         for row in &mut *self.data.lock().unwrap() {
@@ -817,12 +826,6 @@ impl App {
             // The row is neither matched by rules nor manually
             if row.annotation.derived.is_none() && row.annotation.manual.is_none() {
                 self.unmatched_rows += 1;
-            }
-        }
-        self.known_categories.clear();
-        for rule in &self.rules {
-            if let Rule::Complete(CompleteRule { category, .. }) = rule {
-                self.known_categories.insert(category.clone());
             }
         }
     }
@@ -1105,6 +1108,8 @@ impl App {
                         // annotation
                         row.col(|ui| {
                             ui.horizontal(|ui| {
+                                // For some reason the ComboBox adds about 5.0 space after it, so
+                                // we have to counter that by adding space everywhere else…
                                 if entry.money.inner.credit {
                                     entry.annotation.ui(
                                         ui,
@@ -1112,10 +1117,13 @@ impl App {
                                         &mut self.minimap,
                                     );
                                     ui.label(regular("→"));
+                                    ui.add_space(5.0);
                                     ui.label(regular(&self.account_name));
                                 } else {
                                     ui.label(regular(&self.account_name));
+                                    ui.add_space(5.0);
                                     ui.label(regular("→"));
+                                    ui.add_space(5.0);
                                     entry.annotation.ui(
                                         ui,
                                         &self.known_categories,
