@@ -667,7 +667,7 @@ impl App {
         // Force lightmode theme for now until we have darkmode colors
         cc.egui_ctx.set_theme(egui::Theme::Light);
 
-        cc.egui_ctx.set_debug_on_hover(true);
+        // cc.egui_ctx.set_debug_on_hover(true);
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
@@ -876,8 +876,8 @@ impl App {
         ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
             let clear_button = ui.add_sized(
                 [ui.available_width(), 0.0],
-                Button::new(regular("Clear data and load new file").color(Color32::WHITE))
-                    .fill(Color32::BLUE),
+                Button::new(regular("Clear data and load new file").color(Color32::BLACK))
+                    .fill(Color32::LIGHT_BLUE),
             );
             if clear_button.clicked() {
                 self.data.lock().unwrap().clear();
