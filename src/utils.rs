@@ -107,3 +107,12 @@ pub fn paint_dashed_rect_shape<F>(
         }
     }
 }
+
+/// Helper to make it easier to accumulate a Option<Response> without an initial value
+pub fn option_bitor_assign<T: std::ops::BitOrAssign>(opt: &mut Option<T>, value: T) {
+    if let Some(existing) = opt.as_mut() {
+        *existing |= value;
+    } else {
+        *opt = Some(value);
+    }
+}

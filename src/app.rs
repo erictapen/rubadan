@@ -30,6 +30,8 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
+use crate::utils::option_bitor_assign;
+
 use egui::text_edit::TextEdit;
 use egui::{
     Align, Button, Color32, Context, Frame, Id, InnerResponse, Label, LayerId, Layout, Margin,
@@ -70,6 +72,17 @@ type Hid = u64;
 /// Generate a unique Hid
 fn generate_id() -> Hid {
     ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Helper to set the currently hovered widget globally
+fn set_hovered_widget(ctx: &Context, hid: Hid) {
+    ctx.data_mut(|d| {
+        d.insert_temp("hovered_widget".into(), hid);
+    });
+}
+
+fn get_hovered_widget(ctx: &Context) -> Option<Hid> {
+    ctx.data(|d| d.get_temp::<Hid>("hovered_widget".into()))
 }
 
 fn load_fonts(ctx: &egui::Context) {
@@ -286,10 +299,11 @@ impl Money {
 }
 
 impl Renderable for Money {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response {
         let widget_text = self.to_widget_text(ui);
         let response = ui.label(widget_text);
         minimap.push(response.rect, style);
+        response
     }
 }
 
@@ -300,6 +314,15 @@ enum RuleHighlight {
     Match,
     /// The rule matches the hovered row, but was overriden
     MatchOverride,
+}
+
+impl RuleHighlight {
+    fn color(&self) -> Color32 {
+        match self {
+            Self::Match => Color32::GREEN,
+            Self::MatchOverride => Color32::LIGHT_GREEN,
+        }
+    }
 }
 
 /// Ways in which a DataRow and its annotation can be highlighted
@@ -357,30 +380,32 @@ impl<T: Renderable> Highlightable<T> {
             style: Default::default(),
         }
     }
-    fn ui(&self, ui: &mut Ui, minimap: &mut Minimap) {
-        self.inner.ui(ui, self.style, minimap);
+    fn ui(&self, ui: &mut Ui, minimap: &mut Minimap) -> Response {
+        self.inner.ui(ui, self.style, minimap)
     }
 }
 
 trait Renderable {
     /// Draw something and insert the resulting RectShape into the minimap
-    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap);
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response;
 }
 
 impl Renderable for String {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response {
         let response = ui.add(Label::new(regular(self).background_color(style.color())).extend());
         minimap.push(response.rect, style);
+        response
     }
 }
 
 impl Renderable for chrono::NaiveDate {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response {
         let response = ui.add(
             Label::new(regular(format!("{}", self).as_str()).background_color(style.color()))
                 .extend(),
         );
         minimap.push(response.rect, style);
+        response
     }
 }
 
@@ -388,7 +413,7 @@ impl Renderable for chrono::NaiveDate {
 struct RawIban(String);
 
 impl Renderable for RawIban {
-    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) {
+    fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response {
         let response = if let Ok(iban) = self.0.parse::<iban::Iban>() {
             ui.add(
                 Label::new(
@@ -407,6 +432,7 @@ impl Renderable for RawIban {
             )
         };
         minimap.push(response.rect, style);
+        response
     }
 }
 
@@ -438,8 +464,8 @@ impl Annotation {
         ui: &mut Ui,
         known_categories: &indexmap::IndexSet<String>,
         minimap: &mut Minimap,
-    ) {
-        ui.scope_builder(UiBuilder::new(), |ui| {
+    ) -> Response {
+        let total_response = ui.scope_builder(UiBuilder::new(), |ui| {
             if known_categories.is_empty() {
                 ui.disable();
             }
@@ -487,7 +513,9 @@ impl Annotation {
             {
                 hstring.ui(ui, minimap);
             }
+            response.response
         });
+        total_response.inner | total_response.response
     }
 }
 
@@ -640,8 +668,6 @@ pub struct App {
     known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
-    /// The id of the widget currently being hovered
-    hovered_widget: Option<Hid>,
 }
 
 impl Default for App {
@@ -656,7 +682,6 @@ impl Default for App {
             known_categories: Default::default(),
             hints: Default::default(),
             minimap: Default::default(),
-            hovered_widget: None,
         }
     }
 }
@@ -909,6 +934,8 @@ impl App {
         }
     }
     fn data_table(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+
         // Rows should be exactly as high as a button, as that is currently the
         // limiting factor, so we premeasure it in an invisible pass
         let row_height = ui
@@ -919,10 +946,7 @@ impl App {
 
         // Predraw a shadow that's going to indicate that the data table isn't scrolled
         // entirely to the right
-        if let Some(edge) = ui
-            .ctx()
-            .data(|d| d.get_temp::<f32>("annotations_edge_for_shadow".into()))
-        {
+        if let Some(edge) = ctx.data(|d| d.get_temp::<f32>("annotations_edge_for_shadow".into())) {
             let rect = Rect::from_min_max(Pos2::new(edge, f32::MIN), Pos2::new(f32::MAX, f32::MAX));
             let shape = Frame::NONE
                 .shadow(egui::Shadow {
@@ -935,7 +959,7 @@ impl App {
             ui.painter().add(shape);
         }
 
-        if ui.ctx().input(|i| i.screen_rect().width()) > 600.0 {
+        if ctx.input(|i| i.screen_rect().width()) > 600.0 {
             self.minimap_panel(ui, row_height);
         }
         // Clear state so that we can write down elements again
@@ -993,63 +1017,76 @@ impl App {
                 .body(|mut body| {
                     for entry in &mut *self.data.lock().unwrap() {
                         body.row(row_height, |mut row| {
-                            // date
-                            let mut r = row
-                                .col(|ui| {
-                                    entry.date.ui(ui, &mut self.minimap);
-                                })
-                                .1;
-                            // amount
-                            r |= row
-                                .col(|ui| {
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        entry.money.ui(ui, &mut self.minimap);
-                                    });
-                                })
-                                .1;
-                            // iban
-                            r |= row
-                                .col(|ui| {
-                                    if let Some(ibanh) = &entry.iban {
-                                        ibanh.ui(ui, &mut self.minimap);
-                                    }
-                                })
-                                .1;
-                            // name
-                            r |= row
-                                .col(|ui| {
-                                    ui.painter().add(RectShape::filled(
-                                        ui.max_rect().expand2(Vec2::new(
-                                            0.5 * ui.style().spacing.item_spacing.x,
-                                            0.0,
-                                        )),
-                                        CornerRadius::default(),
-                                        Color32::TRANSPARENT,
-                                    ));
-                                    if let Some(nameh) = &entry.name {
-                                        nameh.ui(ui, &mut self.minimap);
-                                    }
-                                })
-                                .1;
-                            // purpose
-                            r |= row
-                                .col(|ui| {
-                                    ui.painter().add(RectShape::filled(
-                                        ui.max_rect().expand2(Vec2::new(
-                                            0.5 * ui.style().spacing.item_spacing.x,
-                                            0.0,
-                                        )),
-                                        CornerRadius::default(),
-                                        Color32::TRANSPARENT,
-                                    ));
-                                    if let Some(purposeh) = &entry.purpose {
-                                        purposeh.ui(ui, &mut self.minimap);
-                                    }
-                                })
-                                .1;
+                            // row.col() doesn't return its inner response, so have to manually track
+                            // it for figuring out wethet a row was hovered.
+                            // Response doesn't have a Default, so we have to start with None…
+                            let mut row_response: Option<Response> = None;
 
-                            if r.hovered() {
-                                self.hovered_widget = Some(entry.id);
+                            // date
+                            row.col(|ui| {
+                                option_bitor_assign(
+                                    &mut row_response,
+                                    entry.date.ui(ui, &mut self.minimap),
+                                );
+                            });
+                            // amount
+                            row.col(|ui| {
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    option_bitor_assign(
+                                        &mut row_response,
+                                        entry.money.ui(ui, &mut self.minimap),
+                                    );
+                                });
+                            });
+                            // iban
+                            row.col(|ui| {
+                                if let Some(ibanh) = &entry.iban {
+                                    option_bitor_assign(
+                                        &mut row_response,
+                                        ibanh.ui(ui, &mut self.minimap),
+                                    );
+                                }
+                            });
+                            // name
+                            row.col(|ui| {
+                                ui.painter().add(RectShape::filled(
+                                    ui.max_rect().expand2(Vec2::new(
+                                        0.5 * ui.style().spacing.item_spacing.x,
+                                        0.0,
+                                    )),
+                                    CornerRadius::default(),
+                                    Color32::TRANSPARENT,
+                                ));
+                                if let Some(nameh) = &entry.name {
+                                    option_bitor_assign(
+                                        &mut row_response,
+                                        nameh.ui(ui, &mut self.minimap),
+                                    );
+                                }
+                            });
+                            // purpose
+                            row.col(|ui| {
+                                ui.painter().add(RectShape::filled(
+                                    ui.max_rect().expand2(Vec2::new(
+                                        0.5 * ui.style().spacing.item_spacing.x,
+                                        0.0,
+                                    )),
+                                    CornerRadius::default(),
+                                    Color32::TRANSPARENT,
+                                ));
+                                if let Some(purposeh) = &entry.purpose {
+                                    option_bitor_assign(
+                                        &mut row_response,
+                                        purposeh.ui(ui, &mut self.minimap),
+                                    );
+                                }
+                            });
+
+                            // Add all the whitespace of the row to the response
+                            option_bitor_assign(&mut row_response, row.response());
+
+                            if row_response.map(|r| r.hovered()).unwrap_or_default() {
+                                set_hovered_widget(&ctx, entry.id);
                             }
                         });
                     }
@@ -1091,6 +1128,7 @@ impl App {
         }
     }
     fn annotations_table(&mut self, ui: &mut Ui, offset_annotations: &mut f32, row_height: f32) {
+        let ctx = ui.ctx().clone();
         let annotations_response = TableBuilder::new(ui)
             .vertical_scroll_offset(self.data_vertical_scroll_offset)
             .cell_layout(Layout::left_to_right(Align::Center))
@@ -1109,33 +1147,47 @@ impl App {
             .body(|mut body| {
                 for entry in &mut *self.data.lock().unwrap() {
                     body.row(row_height, |mut row| {
+                        // Accumulate the response for the entire row
+                        let mut row_response: Option<Response> = None;
+
                         // annotation
                         row.col(|ui| {
-                            ui.horizontal(|ui| {
-                                // For some reason the ComboBox adds about 5.0 space after it, so
-                                // we have to counter that by adding space everywhere else…
-                                if entry.money.inner.credit {
-                                    entry.annotation.ui(
-                                        ui,
-                                        &self.known_categories,
-                                        &mut self.minimap,
-                                    );
-                                    ui.label(regular("→"));
-                                    ui.add_space(5.0);
-                                    ui.label(regular(&self.account_name));
-                                } else {
-                                    ui.label(regular(&self.account_name));
-                                    ui.add_space(5.0);
-                                    ui.label(regular("→"));
-                                    ui.add_space(5.0);
-                                    entry.annotation.ui(
-                                        ui,
-                                        &self.known_categories,
-                                        &mut self.minimap,
-                                    );
-                                }
-                            });
+                            let content_response = ui
+                                .horizontal(|ui| {
+                                    // For some reason the ComboBox adds about 5.0 space after it, so
+                                    // we have to counter that by adding space everywhere else…
+                                    if entry.money.inner.credit {
+                                        let mut r = entry.annotation.ui(
+                                            ui,
+                                            &self.known_categories,
+                                            &mut self.minimap,
+                                        );
+                                        r |= ui.label(regular("→"));
+                                        ui.add_space(5.0);
+                                        r |= ui.label(regular(&self.account_name));
+                                        r
+                                    } else {
+                                        let mut r = ui.label(regular(&self.account_name));
+                                        ui.add_space(5.0);
+                                        r |= ui.label(regular("→"));
+                                        ui.add_space(5.0);
+                                        r |= entry.annotation.ui(
+                                            ui,
+                                            &self.known_categories,
+                                            &mut self.minimap,
+                                        );
+                                        r
+                                    }
+                                })
+                                .inner;
+
+                            option_bitor_assign(&mut row_response, content_response);
                         });
+                        option_bitor_assign(&mut row_response, row.response());
+
+                        if row_response.map(|r| r.hovered()).unwrap_or_default() {
+                            set_hovered_widget(&ctx, entry.id);
+                        }
                     });
                 }
             });
@@ -1169,7 +1221,7 @@ impl App {
         result
     }
     fn export_panel(&mut self, ui: &mut Ui) {
-        egui::SidePanel::right("minimap")
+        egui::SidePanel::right("export")
             .resizable(false)
             .exact_width(200.0)
             .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
@@ -1392,7 +1444,9 @@ impl eframe::App for App {
         }
 
         // Reset the hovered widget every frame
-        self.hovered_widget = None;
+        ctx.data_mut(|d| {
+            d.remove_temp::<Hid>("hovered_widget".into());
+        });
 
         // We turn off text selection globally in case the user is dragging
         // something
@@ -1583,9 +1637,14 @@ impl CompleteRule {
         hovered_condition: &mut Option<Condition>,
         rule_i: usize,
     ) -> InnerResponse<Response> {
+        let highlight_color = get_hovered_widget(ui.ctx())
+            .and_then(|hid| self.highlights.get(&hid))
+            .map(|r| r.color())
+            .unwrap_or_default();
+
         let response = ui.horizontal_top(|ui| {
             Frame::NONE
-                .fill(Color32::TRANSPARENT)
+                .fill(highlight_color)
                 .show(ui, |ui| {
                     // When being dragged we render the rule in a more subtle color
                     let color = match (self.enabled, self.dragged) {
