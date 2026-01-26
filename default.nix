@@ -3,7 +3,7 @@
   rustPlatform,
   trunk,
   rustc,
-  wasm-bindgen-cli_0_2_106,
+  wasm-bindgen-cli_0_2_108,
   binaryen,
   brotli,
   ibm-plex,
@@ -29,7 +29,7 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [
     trunk
     rustc.llvmPackages.lld
-    wasm-bindgen-cli_0_2_106
+    wasm-bindgen-cli_0_2_108
     binaryen
     brotli
   ];

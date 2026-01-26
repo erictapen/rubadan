@@ -61,7 +61,7 @@ const MIN_TEXT_EDIT_WIDTH: f32 = 50.0;
 
 const PHI: f32 = 1.618_034;
 
-/// Global counter that should only be used inside gen_id()
+/// Global counter that should only be used inside generate_id()
 static ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// A unique ID that is only there for highlighting relationships
