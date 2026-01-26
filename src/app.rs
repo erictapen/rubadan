@@ -464,9 +464,12 @@ impl Annotation {
                     }
                     changed
                 });
+
+            // If the content was changed, we update annotations
             if let Some(true) = response.inner {
                 App::request_update_annotations(ui.ctx());
             }
+
             let rect = response.response.rect;
             // derived takes precedence, so we strike through the label again
             if self.derived.is_some() && self.manual.is_some() {
@@ -489,7 +492,7 @@ impl Annotation {
 }
 
 struct DataRow {
-    id: u64,
+    id: Hid,
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
     iban: Option<Highlightable<RawIban>>,
@@ -786,7 +789,7 @@ impl App {
             self.file_load_widget(ui);
         });
     }
-    /// Annotate data rows and update highlights
+    /// Annotate data rows and update highlight relationships
     /// The idea is to not run this every frame, but only when rules, overrides or data change
     fn update_annotations(&mut self) {
         info!("Updating annotations");
@@ -1234,11 +1237,11 @@ impl App {
 
                     // Delete rules marked as to be deleted
                     self.rules.retain(|r| {
-                        if !r.to_delete() {
+                        if r.to_delete() {
                             App::request_update_annotations(ui.ctx());
-                            true
-                        } else {
                             false
+                        } else {
+                            true
                         }
                     });
 
@@ -1387,6 +1390,7 @@ impl eframe::App for App {
             });
         }
 
+        // Reset the hovered widget every frame
         self.hovered_widget = None;
 
         // We turn off text selection globally in case the user is dragging
