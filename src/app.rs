@@ -795,6 +795,7 @@ impl App {
         info!("Updating annotations");
         self.known_categories.clear();
         for rule in &mut self.rules {
+            // Clears also highlight information
             rule.clear_counts();
             if let Rule::Complete(CompleteRule { category, .. }) = rule {
                 self.known_categories.insert(category.clone());
@@ -806,14 +807,14 @@ impl App {
             for rule in &mut self.rules {
                 let rule_matches = rule.matches(row);
                 // We only use complete rules for annotation
-                if let Rule::Complete(CompleteRule {
-                    category,
-                    count,
-                    count_overriden,
-                    highlights,
-                    ..
-                }) = rule
-                    && rule_matches
+                if rule_matches
+                    && let Rule::Complete(CompleteRule {
+                        category,
+                        count,
+                        count_overriden,
+                        highlights,
+                        ..
+                    }) = rule
                 {
                     // Earlier rules take precedence over later rules
                     if row.annotation.derived.is_none() {
@@ -1564,6 +1565,7 @@ impl Display for IncompleteRule {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct CompleteRule {
     enabled: bool,
+    // All the possible precomputed highlighting combinations
     highlights: HashMap<Hid, RuleHighlight>,
     condition: Condition,
     category: String,
@@ -1683,6 +1685,8 @@ struct IncompleteRule {
     condition: Condition,
     category: String,
     /// Try to complete this rule next frame
+    /// We have to carry this, as the button for creating a rule is rendered last and we want to
+    /// show error messages in case completion fails.
     try_to_complete: bool,
 }
 
