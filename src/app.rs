@@ -63,14 +63,14 @@ const MIN_TEXT_EDIT_WIDTH: f32 = 50.0;
 
 const PHI: f32 = 1.618_034;
 
-/// Global counter that should only be used inside generate_id()
+/// Global counter that should only be used inside generate_hid()
 static ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// A unique ID that is only there for highlighting relationships
 type Hid = u64;
 
 /// Generate a unique Hid
-fn generate_id() -> Hid {
+fn generate_hid() -> Hid {
     ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -146,7 +146,7 @@ fn load_fonts(ctx: &egui::Context) {
             .push("Noto Sans Symbols2".to_owned());
     }
 
-    // We don't register default font so that non-explicit font use is noticed.
+    // We don't register a default font so that non-explicit font use is noticed.
     ctx.set_fonts(fonts);
 }
 
@@ -520,7 +520,7 @@ impl Annotation {
 }
 
 struct DataRow {
-    id: Hid,
+    hid: Hid,
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
     iban: Option<Highlightable<RawIban>>,
@@ -559,7 +559,7 @@ impl From<(mt940::StatementLine, &String)> for DataRow {
             }
         });
         DataRow {
-            id: generate_id(),
+            hid: generate_hid(),
             date: Highlightable::new(sl.value_date),
             money: Highlightable::new(Money::new(sl.amount, iso_currency_code, credit)),
             iban: iban.map(RawIban).map(Highlightable::new),
@@ -844,10 +844,10 @@ impl App {
                     // Earlier rules take precedence over later rules
                     if row.annotation.derived.is_none() {
                         row.annotation.set_derived(category.clone());
-                        highlights.insert(row.id, RuleHighlight::Match);
+                        highlights.insert(row.hid, RuleHighlight::Match);
                         *count += 1;
                     } else {
-                        highlights.insert(row.id, RuleHighlight::MatchOverride);
+                        highlights.insert(row.hid, RuleHighlight::MatchOverride);
                         *count_overriden += 1;
                     }
                 }
@@ -1086,7 +1086,7 @@ impl App {
                             option_bitor_assign(&mut row_response, row.response());
 
                             if row_response.map(|r| r.hovered()).unwrap_or_default() {
-                                set_hovered_widget(&ctx, entry.id);
+                                set_hovered_widget(&ctx, entry.hid);
                             }
                         });
                     }
@@ -1186,7 +1186,7 @@ impl App {
                         option_bitor_assign(&mut row_response, row.response());
 
                         if row_response.map(|r| r.hovered()).unwrap_or_default() {
-                            set_hovered_widget(&ctx, entry.id);
+                            set_hovered_widget(&ctx, entry.hid);
                         }
                     });
                 }
@@ -1271,7 +1271,6 @@ impl App {
         // Keep track if there is any rule being edited
         let mut a_rule_is_being_edited = false;
 
-        let mut hovered_rule: Option<Rule> = None;
         let mut hovered_condition: Option<Condition> = None;
 
         let response = egui::CentralPanel::default().show(ctx, |ui| {
@@ -1306,7 +1305,7 @@ impl App {
                                     response,
                                 } = rule.ui(ui, &mut hovered_condition, i);
                                 if rule_response.hovered() {
-                                    hovered_rule = Some(rule.clone());
+                                    set_hovered_widget(&ctx, rule.hid());
                                 }
 
                                 // In case there is any rule being dragged we preview the drop position
@@ -1391,11 +1390,6 @@ impl App {
         });
         if response.response.hovered() {
             self.hints.push(Hint::Rules);
-        }
-
-        // might be inefficient?
-        for entry in &mut *self.data.lock().unwrap() {
-            entry.highlight(&hovered_rule, &hovered_condition);
         }
     }
     fn bottom_bar(&mut self, ctx: &egui::Context) {
@@ -1498,6 +1492,7 @@ impl Rule {
     fn complete(condition: Condition, category: String) -> Self {
         Self::Complete(CompleteRule {
             enabled: true,
+            hid: generate_hid(),
             highlights: HashMap::new(),
             condition,
             category,
@@ -1510,10 +1505,17 @@ impl Rule {
     }
     fn incomplete(condition: Condition, category: String) -> Self {
         Self::Incomplete(IncompleteRule {
+            hid: generate_hid(),
             condition,
             category,
             try_to_complete: false,
         })
+    }
+    fn hid(&self) -> Hid {
+        match self {
+            Self::Complete(CompleteRule { hid, .. }) => *hid,
+            Self::Incomplete(IncompleteRule { hid, .. }) => *hid,
+        }
     }
     fn try_into_complete(&self) -> Option<Self> {
         if let Self::Incomplete(IncompleteRule {
@@ -1619,6 +1621,7 @@ impl Display for IncompleteRule {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct CompleteRule {
     enabled: bool,
+    hid: Hid,
     // All the possible precomputed highlighting combinations
     highlights: HashMap<Hid, RuleHighlight>,
     condition: Condition,
@@ -1741,6 +1744,7 @@ impl CompleteRule {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct IncompleteRule {
+    hid: Hid,
     condition: Condition,
     category: String,
     /// Try to complete this rule next frame
@@ -1901,11 +1905,7 @@ enum Condition {
 
 impl Condition {
     fn incomplete() -> Self {
-        Self::Incomplete(IncompleteCondition {
-            field: None,
-            ctype: None,
-            value: String::new(),
-        })
+        Self::Incomplete(Default::default())
     }
     fn boolean(condition1: Condition, condition2: Condition, op: BooleanOp) -> Self {
         Self::Boolean {
@@ -1945,11 +1945,13 @@ impl Condition {
                 field: Some(field),
                 ctype: Some(ctype),
                 value,
+                ..
             }) => {
                 if value.is_empty() {
                     None
                 } else {
                     Some(Self::Plain(Comparison {
+                        hid: generate_hid(),
                         field: field.clone(),
                         ctype: ctype.clone(),
                         value: value.to_string(),
@@ -1990,6 +1992,7 @@ impl Condition {
                 field,
                 ctype,
                 value,
+                hid: _,
             }) => {
                 let mut response =
                     ui.add(Label::new(bold(format!("{field}").as_str()).color(color)));
@@ -2084,11 +2087,23 @@ impl Display for Condition {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct IncompleteCondition {
+    hid: Hid,
     field: Option<Field>,
     ctype: Option<ComparisonType>,
     value: String,
+}
+
+impl Default for IncompleteCondition {
+    fn default() -> Self {
+        Self {
+            hid: generate_hid(),
+            field: None,
+            ctype: None,
+            value: String::new(),
+        }
+    }
 }
 
 impl IncompleteCondition {
@@ -2387,6 +2402,7 @@ fn missing_value_indicator(ui: &mut Ui, rect: Rect, id: Id, try_to_complete: boo
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct Comparison {
+    hid: Hid,
     field: Field,
     ctype: ComparisonType,
     value: String,
@@ -2436,6 +2452,7 @@ impl Display for Comparison {
             field,
             ctype,
             value,
+            ..
         } = self;
         write!(f, "{field} {ctype} “{value}”")
     }
