@@ -817,7 +817,11 @@ impl App {
     /// Annotate data rows and update highlight relationships
     /// The idea is to not run this every frame, but only when rules, overrides or data change
     fn update_annotations(&mut self) {
-        info!("Updating annotations");
+        #[cfg(not(target_arch = "wasm32"))]
+        let start = std::time::Instant::now();
+        #[cfg(target_arch = "wasm32")]
+        let start = web_sys::window().unwrap().performance().unwrap().now();
+
         self.known_categories.clear();
         for rule in &mut self.rules {
             // Clears also highlight information
@@ -857,6 +861,12 @@ impl App {
                 self.unmatched_rows += 1;
             }
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let duration = start.elapsed().as_millis();
+        #[cfg(target_arch = "wasm32")]
+        let duration = web_sys::window().unwrap().performance().unwrap().now() - start;
+        info!("Updated annotations in {}ms", duration);
     }
     /// Request to update_annotations
     fn request_update_annotations(ctx: &egui::Context) {
