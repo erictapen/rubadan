@@ -716,6 +716,13 @@ impl App {
         #[cfg(debug_assertions)]
         cc.egui_ctx.set_debug_on_hover(true);
 
+        let rules: Vec<Rule> = cc
+            .storage
+            .expect("Storage unavailable")
+            .get_string("rules")
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         let mut result = Self {
@@ -724,6 +731,7 @@ impl App {
                 // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
                 include_bytes!("../sample_data/mt940.sta"),
             ))),
+            rules,
             ..Default::default()
         };
         #[cfg(not(feature = "demo"))]
@@ -1632,6 +1640,12 @@ impl App {
             }
         }
     }
+    // Inverse of eframe::App::save
+    fn restore(&mut self, storage: &mut dyn eframe::Storage) {
+        if let Some(rules_str) = storage.get_string("rules") {
+            self.rules = serde_json::from_str(&rules_str).expect("Couldn't deserialise rules");
+        }
+    }
 }
 
 /// The minimal allowed height of the transactions panel
@@ -1646,7 +1660,17 @@ const MIN_CURVE_WIDTH: f32 = 50.0;
 const SHADOW_WIDTH: u8 = 20;
 
 impl eframe::App for App {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {}
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
+    }
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        storage.set_string(
+            "rules",
+            serde_json::to_string(&self.rules).expect("Couldn't serialise rules"),
+        );
+        storage.flush();
+        info!("Successfully saved state");
+    }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.hints.clear();

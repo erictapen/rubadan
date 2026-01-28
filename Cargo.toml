@@ -35,15 +35,15 @@ nom = "*"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "*"
-eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "wayland", "glow", "x11" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "wayland", "glow", "x11" ] }
+eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "persistence", "wayland", "glow", "x11" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "persistence", "wayland", "glow", "x11" ] }
 futures = "*"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "*", default-features = false }
 web-sys = { version = "*", default-features = false }
-eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
-eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "glow" ] }
+eframe_parley = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "persistence", "glow" ], git = "https://github.com/valadaptive/egui", branch = "parley-2" }
+eframe_latest = { package = "eframe", optional = true, version = "*", default-features = false, features = [ "persistence", "glow" ] }
 
 [profile.release]
 opt-level = 2
