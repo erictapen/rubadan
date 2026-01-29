@@ -9,7 +9,6 @@
   brotli,
   ibm-plex,
   noto-fonts,
-  publicUrl ? "/",
   libglvnd,
   xorg,
   libxkbcommon,
@@ -42,7 +41,7 @@ in
     common
     // {
 
-      env.TRUNK_BUILD_PUBLIC_URL = publicUrl;
+      env.TRUNK_BUILD_PUBLIC_URL = "";
 
       nativeBuildInputs = [
         trunk
