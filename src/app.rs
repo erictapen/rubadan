@@ -26,7 +26,7 @@ use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
@@ -82,7 +82,7 @@ fn set_hovered_widget(ctx: &Context, hid: Hid) {
 }
 
 fn get_hovered_widget(ctx: &Context) -> Option<Hid> {
-    ctx.data(|d| d.get_temp::<Hid>("hovered_widget".into()))
+    ctx.data(|d| d.get_temp::<Hid>("hovered_widget_old".into()))
 }
 
 fn load_fonts(ctx: &egui::Context) {
@@ -521,6 +521,8 @@ impl Annotation {
 
 struct DataRow {
     hid: Hid,
+    // All the possible precomputed highlighting combinations
+    highlights: HashSet<Hid>,
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
     iban: Option<Highlightable<RawIban>>,
@@ -560,6 +562,7 @@ impl From<(mt940::StatementLine, &String)> for DataRow {
         });
         DataRow {
             hid: generate_hid(),
+            highlights: Default::default(),
             date: Highlightable::new(sl.value_date),
             money: Highlightable::new(Money::new(sl.amount, iso_currency_code, credit)),
             iban: iban.map(RawIban).map(Highlightable::new),
@@ -834,6 +837,7 @@ impl App {
         for row in &mut *self.data.lock().unwrap() {
             row.annotation.clear_derived();
             for rule in &mut self.rules {
+                let rule_hid = rule.hid();
                 let rule_matches = rule.matches(row);
                 // We only use complete rules for annotation
                 if rule_matches
@@ -849,6 +853,8 @@ impl App {
                     if row.annotation.derived.is_none() {
                         row.annotation.set_derived(category.clone());
                         highlights.insert(row.hid, RuleHighlight::Match);
+                        row.highlights.insert(rule_hid);
+
                         *count += 1;
                     } else {
                         highlights.insert(row.hid, RuleHighlight::MatchOverride);
@@ -860,6 +866,9 @@ impl App {
             if row.annotation.derived.is_none() && row.annotation.manual.is_none() {
                 self.unmatched_rows += 1;
             }
+
+            #[cfg(debug_assertions)]
+            info!("{}: {:?}", row.hid, row.highlights);
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -945,6 +954,7 @@ impl App {
     }
     fn data_table(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        let hovered_widget = get_hovered_widget(&ctx);
 
         // Rows should be exactly as high as a button, as that is currently the
         // limiting factor, so we premeasure it in an invisible pass
@@ -1026,14 +1036,28 @@ impl App {
                 })
                 .body(|mut body| {
                     for entry in &mut *self.data.lock().unwrap() {
+                        let highlight: bool = hovered_widget
+                            .map(|hid| entry.highlights.contains(&hid))
+                            .unwrap_or_default();
+
                         body.row(row_height, |mut row| {
-                            // row.col() doesn't return its inner response, so have to manually track
+                            // row.col() doesn't return its inner response, so we have to manually track
                             // it for figuring out wethet a row was hovered.
                             // Response doesn't have a Default, so we have to start with None…
                             let mut row_response: Option<Response> = None;
 
                             // date
                             row.col(|ui| {
+                                if highlight {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::LIGHT_GREEN,
+                                    ));
+                                }
                                 option_bitor_assign(
                                     &mut row_response,
                                     entry.date.ui(ui, &mut self.minimap),
@@ -1041,6 +1065,16 @@ impl App {
                             });
                             // amount
                             row.col(|ui| {
+                                if highlight {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::LIGHT_GREEN,
+                                    ));
+                                }
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     option_bitor_assign(
                                         &mut row_response,
@@ -1050,6 +1084,16 @@ impl App {
                             });
                             // iban
                             row.col(|ui| {
+                                if highlight {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::LIGHT_GREEN,
+                                    ));
+                                }
                                 if let Some(ibanh) = &entry.iban {
                                     option_bitor_assign(
                                         &mut row_response,
@@ -1059,6 +1103,16 @@ impl App {
                             });
                             // name
                             row.col(|ui| {
+                                if highlight {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::LIGHT_GREEN,
+                                    ));
+                                }
                                 ui.painter().add(RectShape::filled(
                                     ui.max_rect().expand2(Vec2::new(
                                         0.5 * ui.style().spacing.item_spacing.x,
@@ -1076,6 +1130,16 @@ impl App {
                             });
                             // purpose
                             row.col(|ui| {
+                                if highlight {
+                                    ui.painter().add(RectShape::filled(
+                                        ui.max_rect().expand2(Vec2::new(
+                                            0.5 * ui.style().spacing.item_spacing.x,
+                                            0.0,
+                                        )),
+                                        CornerRadius::default(),
+                                        Color32::LIGHT_GREEN,
+                                    ));
+                                }
                                 ui.painter().add(RectShape::filled(
                                     ui.max_rect().expand2(Vec2::new(
                                         0.5 * ui.style().spacing.item_spacing.x,
@@ -1139,6 +1203,7 @@ impl App {
     }
     fn annotations_table(&mut self, ui: &mut Ui, offset_annotations: &mut f32, row_height: f32) {
         let ctx = ui.ctx().clone();
+        let hovered_widget = get_hovered_widget(&ctx);
         let annotations_response = TableBuilder::new(ui)
             .vertical_scroll_offset(self.data_vertical_scroll_offset)
             .cell_layout(Layout::left_to_right(Align::Center))
@@ -1156,12 +1221,25 @@ impl App {
             })
             .body(|mut body| {
                 for entry in &mut *self.data.lock().unwrap() {
+                    let highlight: bool = hovered_widget
+                        .map(|hid| entry.highlights.contains(&hid))
+                        .unwrap_or_default();
                     body.row(row_height, |mut row| {
                         // Accumulate the response for the entire row
                         let mut row_response: Option<Response> = None;
 
                         // annotation
                         row.col(|ui| {
+                            if highlight {
+                                ui.painter().add(RectShape::filled(
+                                    ui.max_rect().expand2(Vec2::new(
+                                        0.5 * ui.style().spacing.item_spacing.x,
+                                        0.0,
+                                    )),
+                                    CornerRadius::default(),
+                                    Color32::LIGHT_GREEN,
+                                ));
+                            }
                             let content_response = ui
                                 .horizontal(|ui| {
                                     // For some reason the ComboBox adds about 5.0 space after it, so
@@ -1411,6 +1489,10 @@ impl App {
                 ui.set_height(BOTTOM_BAR_HEIGHT);
 
                 ui.horizontal(|ui| {
+                    #[cfg(debug_assertions)]
+                    if let Some(hid) = get_hovered_widget(ctx) {
+                        ui.label(regular(&format!("Hovering {hid}")));
+                    }
                     if let Some(hint) = self.hints.last() {
                         hint.view(ui);
                     }
@@ -1447,8 +1529,13 @@ impl eframe::App for App {
             });
         }
 
-        // Reset the hovered widget every frame
+        // Reset the hovered widget, but keep it for one more roundtrip
         ctx.data_mut(|d| {
+            if let Some(hid) = d.get_temp::<Hid>("hovered_widget".into()) {
+                d.insert_temp("hovered_widget_old".into(), hid);
+            } else {
+                d.remove_temp::<Hid>("hovered_widget_old".into());
+            }
             d.remove_temp::<Hid>("hovered_widget".into());
         });
 
