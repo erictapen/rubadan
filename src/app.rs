@@ -326,7 +326,7 @@ impl RuleHighlight {
 }
 
 /// Ways in which a DataRow and its annotation can be highlighted
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Hash)]
 enum RowHighlight {
     Matched,
     Overriden,
@@ -968,6 +968,9 @@ impl App {
     fn data_table(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let hovered_widget = get_hovered_widget(&ctx);
+        // The rule that was created last frame
+        let newly_created_rule =
+            ctx.data(|d| d.get_temp::<Hid>("rule_was_just_created_old".into()));
 
         // Rows should be exactly as high as a button, as that is currently the
         // limiting factor, so we premeasure it in an invisible pass
@@ -1049,9 +1052,44 @@ impl App {
                 })
                 .body(|mut body| {
                     for data_row in &mut *self.data.lock().unwrap() {
+                        // In case a rule was created this frame we start a color pulse with the
+                        // RuleHighlight in its Id
+                        if let Some(rh) =
+                            newly_created_rule.and_then(|hid| data_row.highlights.get(&hid))
+                        {
+                            let _ = animate_color_pulse(
+                                &ctx,
+                                Id::new("pulse_rule_got_just_created")
+                                    .with(data_row.hid)
+                                    .with(rh),
+                                true,
+                                RowHighlight::Matched.color(),
+                                200.0,
+                            );
+                        }
+
+                        // The highlighting color that results from a rule just being created or hovering a rule
                         let highlight: Option<Color32> = hovered_widget
                             .and_then(|hid| data_row.highlights.get(&hid))
-                            .map(RowHighlight::color);
+                            .map(RowHighlight::color)
+                            .or(animate_color_pulse(
+                                &ctx,
+                                Id::new("pulse_rule_got_just_created")
+                                    .with(data_row.hid)
+                                    .with(RowHighlight::Matched),
+                                false,
+                                RowHighlight::Matched.color(),
+                                2.0,
+                            ))
+                            .or(animate_color_pulse(
+                                &ctx,
+                                Id::new("pulse_rule_got_just_created")
+                                    .with(data_row.hid)
+                                    .with(RowHighlight::Overriden),
+                                false,
+                                RowHighlight::Overriden.color(),
+                                2.0,
+                            ));
 
                         body.row(row_height, |mut row| {
                             // row.col() doesn't return its inner response, so we have to manually track
@@ -1348,7 +1386,7 @@ impl App {
                     ui.style().visuals.text_color(),
                     2.0,
                 );
-                if notification_color != Color32::TRANSPARENT {
+                if let Some(notification_color) = notification_color {
                     ui.add(Label::new(regular("Copied!").color(notification_color)));
                 }
             });
@@ -1537,6 +1575,16 @@ impl eframe::App for App {
             d.remove_temp::<Hid>("hovered_widget".into());
         });
 
+        // Reset the recently created rule, but keep it for one more roundtrip
+        ctx.data_mut(|d| {
+            if let Some(hid) = d.get_temp::<Hid>("rule_was_just_created".into()) {
+                d.insert_temp("rule_was_just_created_old".into(), hid);
+            } else {
+                d.remove_temp::<Hid>("rule_was_just_created_old".into());
+            }
+            d.remove_temp::<Hid>("rule_was_just_created".into());
+        });
+
         // We turn off text selection globally in case the user is dragging
         // something
         if egui::DragAndDrop::has_any_payload(ctx) {
@@ -1674,6 +1722,9 @@ impl Rule {
         };
 
         if let Some(completed_rule) = completed_rule {
+            ui.ctx().data_mut(|d| {
+                d.insert_temp::<Hid>("rule_was_just_created".into(), completed_rule.hid())
+            });
             *self = completed_rule;
             App::request_update_annotations(ui.ctx());
         }
@@ -1931,8 +1982,15 @@ impl IncompleteRule {
                     {
                         self.try_to_complete = true;
                     }
-                    if completed_rule.is_none() && missing_values_text_color != Color32::TRANSPARENT
-                    {
+                    if let (
+                        None,
+                        Some(missing_values_text_bg_color),
+                        Some(missing_values_text_color),
+                    ) = (
+                        completed_rule,
+                        missing_values_text_bg_color,
+                        missing_values_text_color,
+                    ) {
                         r |= ui.add(Label::new(
                             italic("Fill out all fields before creating the rule")
                                 .background_color(missing_values_text_bg_color)
@@ -2455,45 +2513,49 @@ fn animate_color_pulse(
     send_pulse: bool,
     color: Color32,
     time_in_seconds: f32,
-) -> Color32 {
+) -> Option<Color32> {
     let current_time = ctx.input(|i| i.time) as f32;
     if send_pulse {
         ctx.data_mut(|d| {
             d.insert_temp(id, current_time);
         });
     }
-    if let Some(time_of_last_fail) = ctx.data_mut(|d| d.get_temp::<f32>(id)) {
+    if let Some(time_of_last_event) = ctx.data_mut(|d| d.get_temp::<f32>(id)) {
         ctx.request_repaint();
-        let time_since_last_fail = current_time - time_of_last_fail;
-        let warn_factor = 1.0 - (time_since_last_fail / time_in_seconds);
+        let time_since_last_event = current_time - time_of_last_event;
+        let warn_factor = 1.0 - (time_since_last_event / time_in_seconds);
         if warn_factor > 0.0 {
-            Color32::TRANSPARENT.gamma_multiply(1.0 - warn_factor)
-                + color.gamma_multiply(warn_factor)
+            Some(
+                Color32::TRANSPARENT.gamma_multiply(1.0 - warn_factor)
+                    + color.gamma_multiply(warn_factor),
+            )
         } else {
             ctx.data_mut(|d| {
                 d.remove_temp::<f32>(id);
             });
-            Color32::TRANSPARENT
+            None
         }
     } else {
-        Color32::TRANSPARENT
+        None
     }
 }
 
 /// When a condition is missing a value and the user want's to complete the Rule, we can show a
 /// visual warning which values are missing.
 fn missing_value_indicator(ui: &mut Ui, rect: Rect, id: Id, try_to_complete: bool) {
-    ui.painter().add(epaint::RectShape::filled(
-        rect,
-        CornerRadius::default(),
-        animate_color_pulse(
-            ui.ctx(),
-            id,
-            try_to_complete,
-            Color32::LIGHT_RED,
-            WARN_FADEOUT_TIME,
-        ),
-    ));
+    if let Some(color) = animate_color_pulse(
+        ui.ctx(),
+        id,
+        try_to_complete,
+        Color32::LIGHT_RED,
+        WARN_FADEOUT_TIME,
+    ) {
+        ui.painter().add(epaint::RectShape::filled(
+            rect,
+            CornerRadius::default(),
+            color,
+        ));
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
