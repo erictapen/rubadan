@@ -26,7 +26,7 @@ use egui::FontFamily;
 #[cfg(feature = "egui_parley")]
 use egui::text::style::FontFamily;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
@@ -319,15 +319,27 @@ enum RuleHighlight {
 impl RuleHighlight {
     fn color(&self) -> Color32 {
         match self {
-            Self::Match => Color32::GREEN,
-            Self::MatchOverride => Color32::LIGHT_GREEN,
+            Self::Match => Color32::LIGHT_GREEN,
+            Self::MatchOverride => Color32::ORANGE.gamma_multiply(0.5),
         }
     }
 }
 
 /// Ways in which a DataRow and its annotation can be highlighted
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
-enum RowHighlight {}
+enum RowHighlight {
+    Matched,
+    Overriden,
+}
+
+impl RowHighlight {
+    fn color(&self) -> Color32 {
+        match self {
+            Self::Matched => Color32::LIGHT_GREEN,
+            Self::Overriden => Color32::ORANGE.gamma_multiply(0.5),
+        }
+    }
+}
 
 /// Distinction for how hovering over one element should highlight others
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -522,7 +534,7 @@ impl Annotation {
 struct DataRow {
     hid: Hid,
     // All the possible precomputed highlighting combinations
-    highlights: HashSet<Hid>,
+    highlights: HashMap<Hid, RowHighlight>,
     date: Highlightable<chrono::NaiveDate>,
     money: Highlightable<Money>,
     iban: Option<Highlightable<RawIban>>,
@@ -853,11 +865,12 @@ impl App {
                     if row.annotation.derived.is_none() {
                         row.annotation.set_derived(category.clone());
                         highlights.insert(row.hid, RuleHighlight::Match);
-                        row.highlights.insert(rule_hid);
+                        row.highlights.insert(rule_hid, RowHighlight::Matched);
 
                         *count += 1;
                     } else {
                         highlights.insert(row.hid, RuleHighlight::MatchOverride);
+                        row.highlights.insert(rule_hid, RowHighlight::Overriden);
                         *count_overriden += 1;
                     }
                 }
@@ -1036,9 +1049,9 @@ impl App {
                 })
                 .body(|mut body| {
                     for entry in &mut *self.data.lock().unwrap() {
-                        let highlight: bool = hovered_widget
-                            .map(|hid| entry.highlights.contains(&hid))
-                            .unwrap_or_default();
+                        let highlight: Option<Color32> = hovered_widget
+                            .and_then(|hid| entry.highlights.get(&hid))
+                            .map(RowHighlight::color);
 
                         body.row(row_height, |mut row| {
                             // row.col() doesn't return its inner response, so we have to manually track
@@ -1048,14 +1061,14 @@ impl App {
 
                             // date
                             row.col(|ui| {
-                                if highlight {
+                                if let Some(color) = highlight {
                                     ui.painter().add(RectShape::filled(
                                         ui.max_rect().expand2(Vec2::new(
                                             0.5 * ui.style().spacing.item_spacing.x,
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::LIGHT_GREEN,
+                                        color,
                                     ));
                                 }
                                 option_bitor_assign(
@@ -1065,14 +1078,14 @@ impl App {
                             });
                             // amount
                             row.col(|ui| {
-                                if highlight {
+                                if let Some(color) = highlight {
                                     ui.painter().add(RectShape::filled(
                                         ui.max_rect().expand2(Vec2::new(
                                             0.5 * ui.style().spacing.item_spacing.x,
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::LIGHT_GREEN,
+                                        color,
                                     ));
                                 }
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1084,14 +1097,14 @@ impl App {
                             });
                             // iban
                             row.col(|ui| {
-                                if highlight {
+                                if let Some(color) = highlight {
                                     ui.painter().add(RectShape::filled(
                                         ui.max_rect().expand2(Vec2::new(
                                             0.5 * ui.style().spacing.item_spacing.x,
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::LIGHT_GREEN,
+                                        color,
                                     ));
                                 }
                                 if let Some(ibanh) = &entry.iban {
@@ -1103,24 +1116,16 @@ impl App {
                             });
                             // name
                             row.col(|ui| {
-                                if highlight {
+                                if let Some(color) = highlight {
                                     ui.painter().add(RectShape::filled(
                                         ui.max_rect().expand2(Vec2::new(
                                             0.5 * ui.style().spacing.item_spacing.x,
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::LIGHT_GREEN,
+                                        color,
                                     ));
                                 }
-                                ui.painter().add(RectShape::filled(
-                                    ui.max_rect().expand2(Vec2::new(
-                                        0.5 * ui.style().spacing.item_spacing.x,
-                                        0.0,
-                                    )),
-                                    CornerRadius::default(),
-                                    Color32::TRANSPARENT,
-                                ));
                                 if let Some(nameh) = &entry.name {
                                     option_bitor_assign(
                                         &mut row_response,
@@ -1130,24 +1135,16 @@ impl App {
                             });
                             // purpose
                             row.col(|ui| {
-                                if highlight {
+                                if let Some(color) = highlight {
                                     ui.painter().add(RectShape::filled(
                                         ui.max_rect().expand2(Vec2::new(
                                             0.5 * ui.style().spacing.item_spacing.x,
                                             0.0,
                                         )),
                                         CornerRadius::default(),
-                                        Color32::LIGHT_GREEN,
+                                        color,
                                     ));
                                 }
-                                ui.painter().add(RectShape::filled(
-                                    ui.max_rect().expand2(Vec2::new(
-                                        0.5 * ui.style().spacing.item_spacing.x,
-                                        0.0,
-                                    )),
-                                    CornerRadius::default(),
-                                    Color32::TRANSPARENT,
-                                ));
                                 if let Some(purposeh) = &entry.purpose {
                                     option_bitor_assign(
                                         &mut row_response,
@@ -1221,23 +1218,24 @@ impl App {
             })
             .body(|mut body| {
                 for entry in &mut *self.data.lock().unwrap() {
-                    let highlight: bool = hovered_widget
-                        .map(|hid| entry.highlights.contains(&hid))
-                        .unwrap_or_default();
+                    let highlight: Option<Color32> = hovered_widget
+                        .and_then(|hid| entry.highlights.get(&hid))
+                        .map(RowHighlight::color);
+
                     body.row(row_height, |mut row| {
                         // Accumulate the response for the entire row
                         let mut row_response: Option<Response> = None;
 
                         // annotation
                         row.col(|ui| {
-                            if highlight {
+                            if let Some(color) = highlight {
                                 ui.painter().add(RectShape::filled(
                                     ui.max_rect().expand2(Vec2::new(
                                         0.5 * ui.style().spacing.item_spacing.x,
                                         0.0,
                                     )),
                                     CornerRadius::default(),
-                                    Color32::LIGHT_GREEN,
+                                    color,
                                 ));
                             }
                             let content_response = ui
