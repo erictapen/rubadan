@@ -1048,9 +1048,9 @@ impl App {
                     });
                 })
                 .body(|mut body| {
-                    for entry in &mut *self.data.lock().unwrap() {
+                    for data_row in &mut *self.data.lock().unwrap() {
                         let highlight: Option<Color32> = hovered_widget
-                            .and_then(|hid| entry.highlights.get(&hid))
+                            .and_then(|hid| data_row.highlights.get(&hid))
                             .map(RowHighlight::color);
 
                         body.row(row_height, |mut row| {
@@ -1073,7 +1073,7 @@ impl App {
                                 }
                                 option_bitor_assign(
                                     &mut row_response,
-                                    entry.date.ui(ui, &mut self.minimap),
+                                    data_row.date.ui(ui, &mut self.minimap),
                                 );
                             });
                             // amount
@@ -1091,7 +1091,7 @@ impl App {
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     option_bitor_assign(
                                         &mut row_response,
-                                        entry.money.ui(ui, &mut self.minimap),
+                                        data_row.money.ui(ui, &mut self.minimap),
                                     );
                                 });
                             });
@@ -1107,7 +1107,7 @@ impl App {
                                         color,
                                     ));
                                 }
-                                if let Some(ibanh) = &entry.iban {
+                                if let Some(ibanh) = &data_row.iban {
                                     option_bitor_assign(
                                         &mut row_response,
                                         ibanh.ui(ui, &mut self.minimap),
@@ -1126,7 +1126,7 @@ impl App {
                                         color,
                                     ));
                                 }
-                                if let Some(nameh) = &entry.name {
+                                if let Some(nameh) = &data_row.name {
                                     option_bitor_assign(
                                         &mut row_response,
                                         nameh.ui(ui, &mut self.minimap),
@@ -1145,7 +1145,7 @@ impl App {
                                         color,
                                     ));
                                 }
-                                if let Some(purposeh) = &entry.purpose {
+                                if let Some(purposeh) = &data_row.purpose {
                                     option_bitor_assign(
                                         &mut row_response,
                                         purposeh.ui(ui, &mut self.minimap),
@@ -1157,7 +1157,7 @@ impl App {
                             option_bitor_assign(&mut row_response, row.response());
 
                             if row_response.map(|r| r.hovered()).unwrap_or_default() {
-                                set_hovered_widget(&ctx, entry.hid);
+                                set_hovered_widget(&ctx, data_row.hid);
                             }
                         });
                     }
@@ -1217,9 +1217,9 @@ impl App {
                 });
             })
             .body(|mut body| {
-                for entry in &mut *self.data.lock().unwrap() {
+                for data_row in &mut *self.data.lock().unwrap() {
                     let highlight: Option<Color32> = hovered_widget
-                        .and_then(|hid| entry.highlights.get(&hid))
+                        .and_then(|hid| data_row.highlights.get(&hid))
                         .map(RowHighlight::color);
 
                     body.row(row_height, |mut row| {
@@ -1242,8 +1242,8 @@ impl App {
                                 .horizontal(|ui| {
                                     // For some reason the ComboBox adds about 5.0 space after it, so
                                     // we have to counter that by adding space everywhere else…
-                                    if entry.money.inner.credit {
-                                        let mut r = entry.annotation.ui(
+                                    if data_row.money.inner.credit {
+                                        let mut r = data_row.annotation.ui(
                                             ui,
                                             &self.known_categories,
                                             &mut self.minimap,
@@ -1257,7 +1257,7 @@ impl App {
                                         ui.add_space(5.0);
                                         r |= ui.label(regular("→"));
                                         ui.add_space(5.0);
-                                        r |= entry.annotation.ui(
+                                        r |= data_row.annotation.ui(
                                             ui,
                                             &self.known_categories,
                                             &mut self.minimap,
@@ -1272,7 +1272,7 @@ impl App {
                         option_bitor_assign(&mut row_response, row.response());
 
                         if row_response.map(|r| r.hovered()).unwrap_or_default() {
-                            set_hovered_widget(&ctx, entry.hid);
+                            set_hovered_widget(&ctx, data_row.hid);
                         }
                     });
                 }
@@ -1680,12 +1680,12 @@ impl Rule {
 
         response
     }
-    fn matches(&self, entry: &DataRow) -> bool {
+    fn matches(&self, data_row: &DataRow) -> bool {
         match self {
             Rule::Complete(CompleteRule {
                 enabled, condition, ..
-            }) => *enabled && condition.matches(entry),
-            Rule::Incomplete(IncompleteRule { condition, .. }) => condition.matches(entry),
+            }) => *enabled && condition.matches(data_row),
+            Rule::Incomplete(IncompleteRule { condition, .. }) => condition.matches(data_row),
         }
     }
 }
@@ -2017,21 +2017,21 @@ impl Condition {
     fn or_incomplete(self) -> Self {
         Self::boolean(self, Self::incomplete(), BooleanOp::Or)
     }
-    fn matches(&self, entry: &DataRow) -> bool {
+    fn matches(&self, data_row: &DataRow) -> bool {
         match self {
-            Self::Plain(comparison) => comparison.matches(entry),
+            Self::Plain(comparison) => comparison.matches(data_row),
             Self::Boolean {
                 condition1,
                 condition2,
                 op: BooleanOp::And,
                 ..
-            } => condition1.matches(entry) && condition2.matches(entry),
+            } => condition1.matches(data_row) && condition2.matches(data_row),
             Self::Boolean {
                 condition1,
                 condition2,
                 op: BooleanOp::Or,
                 ..
-            } => condition1.matches(entry) || condition2.matches(entry),
+            } => condition1.matches(data_row) || condition2.matches(data_row),
             Self::Incomplete { .. } => false,
         }
     }
@@ -2505,8 +2505,8 @@ struct Comparison {
 }
 
 impl Comparison {
-    fn matches(&self, entry: &DataRow) -> bool {
-        let data = match (&self.field, entry) {
+    fn matches(&self, data_row: &DataRow) -> bool {
+        let data = match (&self.field, data_row) {
             (
                 Field::Name,
                 DataRow {
