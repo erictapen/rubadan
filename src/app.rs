@@ -1759,7 +1759,8 @@ impl CompleteRule {
                         } else {
                             Color32::TRANSPARENT
                         };
-                        let grip_response = ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)));
+                        let grip_response =
+                            ui.add(Label::new(symbol(GRIP_SYMBOL).color(color)).selectable(false));
                         grip_response.dnd_set_drag_payload(rule_i);
                         if grip_response.dragged() {
                             self.dragged = ButtonState::Active;
