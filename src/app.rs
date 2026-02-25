@@ -1841,6 +1841,11 @@ impl CompleteRule {
                     let toggle_response = ui.add(widgets::toggle_switch::toggle(&mut self.enabled));
                     if toggle_response.changed() {
                         App::request_update_annotations(ui.ctx());
+                        if self.enabled {
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp::<Hid>("rule_was_just_created".into(), self.hid)
+                            });
+                        }
                     }
                     r |= toggle_response;
 
