@@ -412,10 +412,8 @@ impl Renderable for String {
 
 impl Renderable for chrono::NaiveDate {
     fn ui(&self, ui: &mut Ui, style: SelectStyle, minimap: &mut Minimap) -> Response {
-        let response = ui.add(
-            Label::new(regular(format!("{}", self).as_str()).background_color(style.color()))
-                .extend(),
-        );
+        let response =
+            ui.add(Label::new(regular(&self.to_string()).background_color(style.color())).extend());
         minimap.push(response.rect, style);
         response
     }
@@ -1429,7 +1427,7 @@ impl App {
                                     response,
                                 } = rule.ui(ui, &mut hovered_condition, i);
                                 if rule_response.hovered() {
-                                    set_hovered_widget(&ctx, rule.hid());
+                                    set_hovered_widget(ctx, rule.hid());
                                 }
 
                                 // In case there is any rule being dragged we preview the drop position
@@ -1468,15 +1466,13 @@ impl App {
 
                                 // If the rule itself is being dragged we draw a tooltip at the cursor
                                 if dragged == ButtonState::Active {
-                                    let tooltip_layer_id = LayerId::new(
-                                        egui::Order::Tooltip,
-                                        format!("rule{}", i).into(),
-                                    );
+                                    let tooltip_layer_id =
+                                        LayerId::new(egui::Order::Tooltip, Id::new("rule").with(i));
                                     let response = ui
                                         .new_child(
                                             egui::UiBuilder::new().layer_id(tooltip_layer_id),
                                         )
-                                        .add(Label::new(regular(format!("{rule}").as_str())));
+                                        .add(Label::new(regular(&rule.to_string())));
                                     if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
                                         let delta = pointer_pos - response.rect.left_center();
                                         ui.ctx().transform_layer_shapes(
@@ -1859,7 +1855,7 @@ impl CompleteRule {
                             .corner_radius(CornerRadius::same(7))
                             .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
                             .show(ui, |ui| {
-                                ui.label(regular(&format!("{}", self.count)));
+                                ui.label(regular(&self.count.to_string()));
                             });
                         if self.count_overriden > 0 {
                             Frame::NONE
@@ -1867,7 +1863,7 @@ impl CompleteRule {
                                 .corner_radius(CornerRadius::same(7))
                                 .inner_margin(Margin::from(Vec2::new(5.0, 2.0)))
                                 .show(ui, |ui| {
-                                    let r = ui.label(regular(&format!("{}", self.count_overriden)));
+                                    let r = ui.label(regular(&self.count_overriden.to_string()));
                                     ui.painter().hline(
                                         r.rect.x_range(),
                                         r.rect.center().y,
@@ -2151,8 +2147,7 @@ impl Condition {
                 value,
                 hid: _,
             }) => {
-                let mut response =
-                    ui.add(Label::new(bold(format!("{field}").as_str()).color(color)));
+                let mut response = ui.add(Label::new(bold(&field.to_string()).color(color)));
                 response |= ui.add(Label::new(
                     regular(format!("{ctype} “{value}”").as_str()).color(color),
                 ));
@@ -2193,7 +2188,7 @@ impl Condition {
                         r |= cancel_response;
 
                         // Operator
-                        let op_response = ui.add(Label::new(regular(format!("{op}").as_str())));
+                        let op_response = ui.add(Label::new(regular(&op.to_string())));
                         edges.add(op_response.rect, ButtonState::None);
                         edges.commit_layer();
                         ui.allocate_space(Vec2::new(MIN_CURVE_WIDTH, 0.0));
@@ -2275,8 +2270,7 @@ impl IncompleteCondition {
                     let r = ui
                         .vertical(|ui| {
                             for field_variant in Field::iter() {
-                                let r = ui
-                                    .add(Button::new(regular(format!("{field_variant}").as_str())));
+                                let r = ui.add(Button::new(regular(&field_variant.to_string())));
                                 if r.clicked() {
                                     self.field = Some(field_variant);
                                 }
@@ -2293,7 +2287,7 @@ impl IncompleteCondition {
                     if r.clicked() {
                         set_field_to_none = true;
                     }
-                    r |= ui.add(Label::new(regular(format!("{selected_field}").as_str())));
+                    r |= ui.add(Label::new(regular(&selected_field.to_string())));
                     edges.add(r.rect, ButtonState::Active);
                     edges.commit_layer();
                     r
@@ -2323,7 +2317,7 @@ impl IncompleteCondition {
                     let r = ui
                         .vertical(|ui| {
                             for ctype_variant in ComparisonType::iter() {
-                                let r = ui.button(regular(format!("{ctype_variant}").as_str()));
+                                let r = ui.button(regular(&ctype_variant.to_string()));
                                 if r.clicked() {
                                     self.ctype = Some(ctype_variant);
                                 }
@@ -2340,7 +2334,7 @@ impl IncompleteCondition {
                     if r.clicked() {
                         set_ctype_to_none = true;
                     }
-                    r |= ui.add(Label::new(regular(format!("{selected_ctype}").as_str())));
+                    r |= ui.add(Label::new(regular(&selected_ctype.to_string())));
                     edges.add(r.rect, ButtonState::Active);
                     edges.commit_layer();
                     r
