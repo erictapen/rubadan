@@ -1565,18 +1565,16 @@ impl eframe::App for App {
             });
         }
 
-        // Reset the hovered widget, but keep it for one more roundtrip
         ctx.data_mut(|d| {
+            // Reset the hovered widget, but keep it for one more roundtrip
             if let Some(hid) = d.get_temp::<Hid>("hovered_widget".into()) {
                 d.insert_temp("hovered_widget_old".into(), hid);
             } else {
                 d.remove_temp::<Hid>("hovered_widget_old".into());
             }
             d.remove_temp::<Hid>("hovered_widget".into());
-        });
 
-        // Reset the recently created rule, but keep it for one more roundtrip
-        ctx.data_mut(|d| {
+            // Reset the recently created rule, but keep it for one more roundtrip
             if let Some(hid) = d.get_temp::<Hid>("rule_was_just_created".into()) {
                 d.insert_temp("rule_was_just_created_old".into(), hid);
             } else {
