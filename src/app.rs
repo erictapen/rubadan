@@ -733,7 +733,9 @@ impl App {
     fn file_load_widget(&mut self, ui: &mut Ui) {
         Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.add(Label::new(regular("TODO processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or")));
+                ui.style_mut().spacing.item_spacing.x = 0.0;
+                ui.label(bold("Rubadan"));
+                ui.label(regular(&format!(" processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or{THIN_SPACE}")));
                 let button_response = ui.button(bold("pick one."));
                 if button_response.clicked() {
                     let task = rfd::AsyncFileDialog::new().pick_file();
@@ -1558,7 +1560,7 @@ impl App {
             let r = modal.show(ctx, |ui| {
                 ui.style_mut().spacing.item_spacing.x = 0.0;
                 ui.set_width(800.0);
-                ui.heading(regular("This is a publicly available demo of TODO with some example transactions loaded"));
+                ui.heading(regular("This is a publicly available demo of Rubadan with some example transactions loaded"));
                 ui.label(regular(""));
                 ui.horizontal(|ui| {
                 if ui.add(Button::new(regular("Start constructing rules"))
