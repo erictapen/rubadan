@@ -49,6 +49,7 @@ use strum_macros::EnumIter;
 use crate::widgets;
 
 const THIN_SPACE: &str = "\u{2009}";
+const NB_SPACE: &str = "\u{00A0}";
 const GRIP_SYMBOL: &str = "⠿";
 const CANCEL_SYMBOL: &str = "🗙";
 const CHECK_SYMBOL: &str = "✓";
@@ -681,6 +682,8 @@ pub struct App {
     known_categories: indexmap::IndexSet<String>,
     hints: Vec<Hint>,
     minimap: Minimap,
+    #[cfg(feature = "demo")]
+    demo_modal_open: bool,
 }
 
 impl Default for App {
@@ -688,13 +691,15 @@ impl Default for App {
         Self {
             data: Default::default(),
             data_vertical_scroll_offset: 0.0,
-            rules: vec![Rule::incomplete(Condition::incomplete(), "".to_string())],
+            rules: vec![],
             // This default makes sense for hledger
             account_name: "assets".to_string(),
             unmatched_rows: 0,
             known_categories: Default::default(),
             hints: Default::default(),
             minimap: Default::default(),
+            #[cfg(feature = "demo")]
+            demo_modal_open: true,
         }
     }
 }
@@ -935,8 +940,13 @@ impl App {
         ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
             let clear_button = ui.add_sized(
                 [ui.available_width(), 0.0],
-                Button::new(regular("Clear data and load new file").color(Color32::BLACK))
-                    .fill(Color32::LIGHT_BLUE),
+                Button::new(
+                    regular(&format!(
+                        "Clear{NB_SPACE}transactions{NB_SPACE}and load{NB_SPACE}new{NB_SPACE}file"
+                    ))
+                    .color(Color32::BLACK),
+                )
+                .fill(Color32::LIGHT_BLUE),
             );
             if clear_button.clicked() {
                 self.data.lock().unwrap().clear();
@@ -1500,6 +1510,10 @@ impl App {
                         App::request_update_annotations(ui.ctx());
                     }
 
+                    if self.rules.is_empty() {
+                        ui.label(regular("There are no rules yet."));
+                    }
+
                     if !a_rule_is_being_edited
                         && ui.add(Button::new(regular("+ Add new rule"))).clicked()
                     {
@@ -1531,6 +1545,49 @@ impl App {
                 });
             });
     }
+    #[cfg(feature = "demo")]
+    fn demo_modal(&mut self, ctx: &egui::Context) {
+        use egui::Modal;
+
+        if self.demo_modal_open {
+            let mut modal = Modal::new(Id::new("demo modal"));
+            modal = modal.area(
+                Modal::default_area(Id::new("demo modal"))
+                    .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 100.0)),
+            );
+            let r = modal.show(ctx, |ui| {
+                ui.style_mut().spacing.item_spacing.x = 0.0;
+                ui.set_width(800.0);
+                ui.heading(regular("This is a publicly available demo of TODO with some example transactions loaded"));
+                ui.label(regular(""));
+                ui.horizontal(|ui| {
+                if ui.add(Button::new(regular("Start constructing rules"))
+                    .fill(Color32::LIGHT_BLUE)).clicked() {
+                        self.rules.push(Rule::incomplete(Condition::incomplete(), "".to_string()));
+                        ui.close();
+                    }
+                ui.label(regular(&format!("{THIN_SPACE}to annotate the transactions with account names.")));
+                });
+                ui.horizontal(|ui| {
+                ui.label(regular(&format!("Alternatively you can{THIN_SPACE}")));
+                if ui.add(Button::new(regular("clear the transactions and load your own file."))
+                    .fill(Color32::LIGHT_BLUE)).clicked() {
+                        self.data.lock().unwrap().clear();
+                        ui.close();
+                    }
+                });
+                ui.separator();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                if ui.button(regular("Close")).clicked() {
+                    ui.close();
+                }
+                });
+            });
+            if r.should_close() {
+                self.demo_modal_open = false;
+            }
+        }
+    }
 }
 
 /// The minimal allowed height of the transactions panel
@@ -1560,6 +1617,9 @@ impl eframe::App for App {
                 d.insert_temp("update_annotations".into(), false);
             });
         }
+
+        #[cfg(feature = "demo")]
+        self.demo_modal(ctx);
 
         ctx.data_mut(|d| {
             // Reset the hovered widget, but keep it for one more roundtrip
