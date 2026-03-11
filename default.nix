@@ -39,7 +39,7 @@ in
 {
   web = rustPlatform.buildRustPackage (
     common
-    // {
+    // rec {
 
       env.TRUNK_BUILD_PUBLIC_URL = "";
 
@@ -51,10 +51,13 @@ in
         brotli
       ];
 
+      buildFeatures = [ "demo" ];
+
       buildPhase = ''
         trunk build \
           --offline \
           --frozen \
+          --features=${lib.concatStringsSep "," buildFeatures} \
           --release \
           --dist $out
       '';
