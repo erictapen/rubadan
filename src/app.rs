@@ -2627,37 +2627,19 @@ struct Comparison {
 
 impl Comparison {
     fn matches(&self, data_row: &DataRow) -> bool {
-        let data = match (&self.field, data_row) {
-            (
-                Field::Name,
-                DataRow {
-                    name: Some(Highlightable { inner: name, .. }),
-                    ..
-                },
-            ) => name,
-            (
-                Field::Purpose,
-                DataRow {
-                    purpose: Some(Highlightable { inner: purpose, .. }),
-                    ..
-                },
-            ) => purpose,
-            (
-                Field::Iban,
-                DataRow {
-                    iban: Some(Highlightable { inner: iban, .. }),
-                    ..
-                },
-            ) => &iban.0,
-            _ => {
-                return false;
-            }
+        let data: Option<String> = match (&self.field, data_row) {
+            (Field::Name, DataRow { name, .. }) => name.as_ref().map(|h| h.inner.clone()),
+            (Field::Purpose, DataRow { purpose, .. }) => purpose.as_ref().map(|h| h.inner.clone()),
+            (Field::Iban, DataRow { iban, .. }) => iban.as_ref().map(|h| h.inner.0.clone()),
         };
-        match self.ctype {
-            ComparisonType::Exact => *data == self.value,
-            ComparisonType::Contains => data.contains(&self.value),
-            ComparisonType::NotExact => *data != self.value,
-            ComparisonType::NotContains => !data.contains(&self.value),
+        match (&self.ctype, data) {
+            (ComparisonType::Exact, Some(d)) => *d == self.value,
+            (ComparisonType::Contains, Some(d)) => d.contains(&self.value),
+            (ComparisonType::Exact, None) | (ComparisonType::Contains, None) => false,
+
+            (ComparisonType::NotExact, Some(d)) => *d != self.value,
+            (ComparisonType::NotContains, Some(d)) => !d.contains(&self.value),
+            (ComparisonType::NotExact, None) | (ComparisonType::NotContains, None) => true,
         }
     }
 }
