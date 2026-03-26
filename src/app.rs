@@ -1646,7 +1646,7 @@ const MIN_CURVE_WIDTH: f32 = 50.0;
 const SHADOW_WIDTH: u8 = 20;
 
 impl eframe::App for App {
-    fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {}
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.hints.clear();

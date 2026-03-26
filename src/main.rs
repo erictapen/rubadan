@@ -21,7 +21,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "implementation",
+        "rubadan",
         native_options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
