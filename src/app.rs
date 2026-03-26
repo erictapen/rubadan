@@ -713,7 +713,8 @@ impl App {
         // Force lightmode theme for now until we have darkmode colors
         cc.egui_ctx.set_theme(egui::Theme::Light);
 
-        // cc.egui_ctx.set_debug_on_hover(true);
+        #[cfg(debug_assertions)]
+        cc.egui_ctx.set_debug_on_hover(true);
 
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
@@ -905,6 +906,7 @@ impl App {
         egui::SidePanel::right("minimap")
             .resizable(false)
             .exact_width(200.0)
+            .frame(Frame::NONE)
             .show_inside(ui, |ui| {
                 self.minimap(ui, row_height);
             });
@@ -939,9 +941,12 @@ impl App {
             ));
         }
 
-        ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
+        ui.with_layout(Layout::bottom_up(egui::Align::Center), |ui| {
+            // Fake inner_margin
+            ui.add_space(5.0);
+
             let clear_button = ui.add_sized(
-                [ui.available_width(), 0.0],
+                [ui.available_width() - 10.0, 0.0],
                 Button::new(
                     regular(&format!(
                         "Clear{NB_SPACE}transactions{NB_SPACE}and load{NB_SPACE}new{NB_SPACE}file"
@@ -962,6 +967,14 @@ impl App {
             .resizable(true)
             .min_height(TRANSACTIONS_HEIGHT_MIN)
             .default_height(ctx.screen_rect().max.y / PHI)
+            .frame(
+                Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(Margin {
+                        left: 5,
+                        ..Default::default()
+                    }),
+            )
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
 
@@ -1103,7 +1116,7 @@ impl App {
 
                         body.row(row_height, |mut row| {
                             // row.col() doesn't return its inner response, so we have to manually track
-                            // it for figuring out wethet a row was hovered.
+                            // it for figuring out wether a row was hovered.
                             // Response doesn't have a Default, so we have to start with None…
                             let mut row_response: Option<Response> = None;
 
@@ -1357,11 +1370,18 @@ impl App {
     fn export_panel(&mut self, ui: &mut Ui) {
         egui::SidePanel::right("export")
             .resizable(false)
+            .frame(
+                Frame::NONE
+                    .fill(ui.visuals().panel_fill)
+                    .outer_margin(Margin::same(5)),
+            )
             .exact_width(200.0)
-            .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill))
             .show_inside(ui, |ui| {
                 ui.label(regular("The name of this account"));
                 ui.add(TextEdit::singleline(&mut self.account_name).font(regular_font_id(ui)));
+
+                ui.add_space(20.0);
+
                 ui.label(regular(
                     format!(
                         "Provide annotations for {} remaining data rows",
@@ -1407,123 +1427,145 @@ impl App {
 
         let mut hovered_condition: Option<Condition> = None;
 
-        let response = egui::CentralPanel::default().show(ctx, |ui| {
-            self.export_panel(ui);
+        let response = egui::CentralPanel::default()
+            .frame(
+                Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(Margin {
+                        left: 5,
+                        ..Default::default()
+                    }),
+            )
+            .show(ctx, |ui| {
+                self.export_panel(ui);
 
-            ui.add(Label::new(bold("Rules")));
-            egui::ScrollArea::both()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let dragging_pointer: Option<egui::Pos2> = ui
-                        .input(|i| i.pointer.interact_pos())
-                        .filter(|_| egui::DragAndDrop::has_payload_of_type::<usize>(ctx));
-                    let mut last_rule_center = None;
-                    let rules_len = self.rules.len();
-                    let mut drop_to = None;
+                // Compensate for missing margins
+                ui.add_space(10.0);
+                ui.add(Label::new(bold("Rules")));
 
-                    // Delete rules marked as to be deleted
-                    self.rules.retain(|r| {
-                        if r.to_delete() {
-                            App::request_update_annotations(ui.ctx());
-                            false
-                        } else {
-                            true
-                        }
-                    });
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let dragging_pointer: Option<egui::Pos2> = ui
+                            .input(|i| i.pointer.interact_pos())
+                            .filter(|_| egui::DragAndDrop::has_payload_of_type::<usize>(ctx));
+                        let mut last_rule_center = None;
+                        let rules_len = self.rules.len();
+                        let mut drop_to = None;
 
-                    for (i, rule) in self.rules.iter_mut().enumerate() {
-                        match *rule {
-                            Rule::Complete(CompleteRule { dragged, .. }) => {
-                                let egui::InnerResponse {
-                                    inner: rule_response,
-                                    response,
-                                } = rule.ui(ui, &mut hovered_condition, i);
-                                if rule_response.hovered() {
-                                    set_hovered_widget(ctx, rule.hid());
-                                }
+                        // Delete rules marked as to be deleted
+                        self.rules.retain(|r| {
+                            if r.to_delete() {
+                                App::request_update_annotations(ui.ctx());
+                                false
+                            } else {
+                                true
+                            }
+                        });
 
-                                // In case there is any rule being dragged we preview the drop position
-                                if let Some(pointer) = dragging_pointer {
-                                    let stroke = egui::Stroke::new(1.0, Color32::BLUE);
-                                    let rect = response.rect;
-                                    let current_center = rect.center().y;
-                                    // First rule being drawn and the pointer is above it or it's inbetween
-                                    // the most recent one and this one
-                                    if last_rule_center.unwrap_or(0.0) <= pointer.y
-                                        && pointer.y < current_center
-                                    {
-                                        if let Some(last_rule_center) = last_rule_center {
+                        for (i, rule) in self.rules.iter_mut().enumerate() {
+                            match *rule {
+                                Rule::Complete(CompleteRule { dragged, .. }) => {
+                                    let egui::InnerResponse {
+                                        inner: rule_response,
+                                        response,
+                                    } = rule.ui(ui, &mut hovered_condition, i);
+                                    if rule_response.hovered() {
+                                        set_hovered_widget(ctx, rule.hid());
+                                    }
+
+                                    // In case there is any rule being dragged we preview the drop position
+                                    if let Some(pointer) = dragging_pointer {
+                                        let stroke = egui::Stroke::new(1.0, Color32::BLUE);
+                                        let rect = response.rect;
+                                        let current_center = rect.center().y;
+                                        // First rule being drawn and the pointer is above it or it's inbetween
+                                        // the most recent one and this one
+                                        if last_rule_center.unwrap_or(0.0) <= pointer.y
+                                            && pointer.y < current_center
+                                        {
+                                            if let Some(last_rule_center) = last_rule_center {
+                                                ui.painter().hline(
+                                                    rect.x_range(),
+                                                    egui::Rangef::new(
+                                                        last_rule_center,
+                                                        rect.center().y,
+                                                    )
+                                                    .center(),
+                                                    stroke,
+                                                );
+                                            } else {
+                                                ui.painter().hline(
+                                                    rect.x_range(),
+                                                    rect.top(),
+                                                    stroke,
+                                                );
+                                            }
+                                            drop_to = Some(i);
+                                        }
+                                        // pointer is after the last rule
+                                        else if rules_len - 1 == i && current_center < pointer.y {
                                             ui.painter().hline(
                                                 rect.x_range(),
-                                                egui::Rangef::new(
-                                                    last_rule_center,
-                                                    rect.center().y,
-                                                )
-                                                .center(),
+                                                rect.bottom(),
                                                 stroke,
                                             );
-                                        } else {
-                                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
+                                            drop_to = Some(i);
                                         }
-                                        drop_to = Some(i);
                                     }
-                                    // pointer is after the last rule
-                                    else if rules_len - 1 == i && current_center < pointer.y {
-                                        ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                                        drop_to = Some(i);
-                                    }
-                                }
 
-                                last_rule_center = Some(response.rect.center().y);
+                                    last_rule_center = Some(response.rect.center().y);
 
-                                // If the rule itself is being dragged we draw a tooltip at the cursor
-                                if dragged == ButtonState::Active {
-                                    let tooltip_layer_id =
-                                        LayerId::new(egui::Order::Tooltip, Id::new("rule").with(i));
-                                    let response = ui
-                                        .new_child(
-                                            egui::UiBuilder::new().layer_id(tooltip_layer_id),
-                                        )
-                                        .add(Label::new(regular(&rule.to_string())));
-                                    if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
-                                        let delta = pointer_pos - response.rect.left_center();
-                                        ui.ctx().transform_layer_shapes(
-                                            tooltip_layer_id,
-                                            emath::TSTransform::from_translation(delta),
+                                    // If the rule itself is being dragged we draw a tooltip at the cursor
+                                    if dragged == ButtonState::Active {
+                                        let tooltip_layer_id = LayerId::new(
+                                            egui::Order::Tooltip,
+                                            Id::new("rule").with(i),
                                         );
+                                        let response = ui
+                                            .new_child(
+                                                egui::UiBuilder::new().layer_id(tooltip_layer_id),
+                                            )
+                                            .add(Label::new(regular(&rule.to_string())));
+                                        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                                            let delta = pointer_pos - response.rect.left_center();
+                                            ui.ctx().transform_layer_shapes(
+                                                tooltip_layer_id,
+                                                emath::TSTransform::from_translation(delta),
+                                            );
+                                        }
                                     }
                                 }
-                            }
-                            Rule::Incomplete { .. } => {
-                                a_rule_is_being_edited = true;
-                                rule.ui(ui, &mut hovered_condition, i);
+                                Rule::Incomplete { .. } => {
+                                    a_rule_is_being_edited = true;
+                                    rule.ui(ui, &mut hovered_condition, i);
+                                }
                             }
                         }
-                    }
 
-                    // In case a rule was dragdropped this frame
-                    if let (true, Some(from), Some(to)) = (
-                        ctx.input(|i| i.pointer.any_released()),
-                        egui::DragAndDrop::payload::<usize>(ctx),
-                        drop_to,
-                    ) {
-                        let rule = self.rules.remove(*from);
-                        self.rules.insert(to.min(self.rules.len()), rule);
-                        App::request_update_annotations(ui.ctx());
-                    }
+                        // In case a rule was dragdropped this frame
+                        if let (true, Some(from), Some(to)) = (
+                            ctx.input(|i| i.pointer.any_released()),
+                            egui::DragAndDrop::payload::<usize>(ctx),
+                            drop_to,
+                        ) {
+                            let rule = self.rules.remove(*from);
+                            self.rules.insert(to.min(self.rules.len()), rule);
+                            App::request_update_annotations(ui.ctx());
+                        }
 
-                    if self.rules.is_empty() {
-                        ui.label(regular("There are no rules yet."));
-                    }
+                        if self.rules.is_empty() {
+                            ui.label(regular("There are no rules yet."));
+                        }
 
-                    if !a_rule_is_being_edited
-                        && ui.add(Button::new(regular("+ Add new rule"))).clicked()
-                    {
-                        self.rules
-                            .push(Rule::incomplete(Condition::incomplete(), "".to_string()));
-                    }
-                });
-        });
+                        if !a_rule_is_being_edited
+                            && ui.add(Button::new(regular("+ Add new rule"))).clicked()
+                        {
+                            self.rules
+                                .push(Rule::incomplete(Condition::incomplete(), "".to_string()));
+                        }
+                    });
+            });
         if response.response.hovered() {
             self.hints.push(Hint::Rules);
         }
