@@ -8,7 +8,7 @@ use eframe_latest as eframe;
 #[cfg(all(not(target_arch = "wasm32"), feature = "egui_latest"))]
 use egui_latest as egui;
 
-use implementation::App;
+use rubadan::App;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {

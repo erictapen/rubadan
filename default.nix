@@ -16,7 +16,7 @@
 }:
 let
   common = {
-    pname = "implementation";
+    pname = "rubadan";
     version = "0.1.0";
     src = ./.;
     cargoLock = {
@@ -34,6 +34,8 @@ let
       cp ${ibm-plex}/share/fonts/opentype/* assets/fonts/
       cp ${noto-fonts}/share/fonts/noto/NotoSansSymbols2-Regular.otf assets/fonts/
     '';
+
+    meta.mainProgram = "rubadan";
   };
 in
 {
@@ -89,7 +91,7 @@ in
       ];
 
       postInstall = ''
-        wrapProgram $out/bin/implementation \
+        wrapProgram $out/bin/rubadan \
           --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath buildInputs}"
       '';
 

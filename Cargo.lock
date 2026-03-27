@@ -1866,38 +1866,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "implementation"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "eframe 0.31.1",
- "eframe 0.33.3",
- "egui 0.31.1",
- "egui 0.33.3",
- "egui_extras 0.31.1",
- "egui_extras 0.33.3",
- "emath 0.31.1",
- "emath 0.33.3",
- "env_logger",
- "epaint 0.31.1",
- "epaint 0.33.3",
- "futures",
- "iban",
- "indexmap 2.13.0",
- "log",
- "mt940",
- "nom",
- "rfd",
- "rust_decimal",
- "serde",
- "serde_json",
- "strum 0.27.2",
- "strum_macros 0.27.2",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3188,6 +3156,38 @@ name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
+name = "rubadan"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe 0.31.1",
+ "eframe 0.33.3",
+ "egui 0.31.1",
+ "egui 0.33.3",
+ "egui_extras 0.31.1",
+ "egui_extras 0.33.3",
+ "emath 0.31.1",
+ "emath 0.33.3",
+ "env_logger",
+ "epaint 0.31.1",
+ "epaint 0.33.3",
+ "futures",
+ "iban",
+ "indexmap 1.9.3",
+ "log",
+ "mt940",
+ "nom",
+ "rfd",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
 
 [[package]]
 name = "rust_decimal"
