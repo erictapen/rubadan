@@ -10,7 +10,10 @@
   ibm-plex,
   noto-fonts,
   libglvnd,
-  xorg,
+  libx11,
+  libxcursor,
+  libxi,
+  libxcb,
   libxkbcommon,
   wayland,
 }:
@@ -77,10 +80,10 @@ in
 
       buildInputs = [
         libglvnd
-        xorg.libX11
-        xorg.libXcursor
-        xorg.libXi
-        xorg.libxcb
+        libx11
+        libxcursor
+        libxi
+        libxcb
         libxkbcommon
         wayland
       ];
