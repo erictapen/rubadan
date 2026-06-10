@@ -54,7 +54,6 @@ const GRIP_SYMBOL: &str = "⠿";
 const CANCEL_SYMBOL: &str = "🗙";
 const CHECK_SYMBOL: &str = "✓";
 const TRASH_SYMBOL: &str = "🗑";
-const COPY_SYMBOL: &str = "⧉";
 
 /// Time in seconds
 const WARN_FADEOUT_TIME: f32 = 1.0;
@@ -349,13 +348,13 @@ enum SelectStyle {
     #[default]
     Unaffected,
     /// The element is directly hovered over
-    Hovered,
+    _Hovered,
     /// Related to what is hovered on, first degree
-    Related1,
+    _Related1,
     /// Related to what is hovered on, second degree
-    Related2,
+    _Related2,
     /// Suggestion for user input, e.g. for suggesting a column name while creating a rule
-    Suggestion,
+    _Suggestion,
 }
 
 impl SelectStyle {
@@ -363,10 +362,10 @@ impl SelectStyle {
         use egui::Color32;
         match self {
             Self::Unaffected => Color32::TRANSPARENT,
-            Self::Hovered => Color32::DARK_BLUE,
-            Self::Related1 => Color32::BLUE,
-            Self::Related2 => Color32::LIGHT_BLUE,
-            Self::Suggestion => Color32::YELLOW,
+            Self::_Hovered => Color32::DARK_BLUE,
+            Self::_Related1 => Color32::BLUE,
+            Self::_Related2 => Color32::LIGHT_BLUE,
+            Self::_Suggestion => Color32::YELLOW,
         }
     }
     fn color_minimap(&self) -> egui::Color32 {
@@ -594,56 +593,6 @@ impl DataRow {
             .map(From::from)
             .collect()
     }
-    fn set_style_to_every_field(&mut self, style: SelectStyle) {
-        self.date.style = style;
-        self.money.style = style;
-        if let Some(v) = self.iban.as_mut() {
-            v.style = style;
-        }
-        if let Some(v) = self.name.as_mut() {
-            v.style = style;
-        }
-        if let Some(v) = self.purpose.as_mut() {
-            v.style = style;
-        }
-    }
-
-    /// # Arguments
-    /// * `rule` - The rule that is being hovered
-    /// * `condition` - In case we just hover over a condition inside the a Rule
-    fn highlight(&mut self, rule: &Option<Rule>, condition: &Option<Condition>) {
-        self.clear_highlight();
-        if let Some(Rule::Complete(CompleteRule { condition, .. })) = rule {
-            // We highlight even when the rule is disabled, since we still give the user feedback for
-            // what would happen if they'd enable it
-            if condition.matches(self) {
-                self.set_style_to_every_field(SelectStyle::Related2);
-            }
-        } else if condition.as_ref().is_some_and(|c| c.matches(self))
-            && let Some(Condition::Plain(comp)) = condition
-        {
-            match &comp.field {
-                Field::Name => {
-                    if let Some(v) = self.name.as_mut() {
-                        v.style = SelectStyle::Related1;
-                    }
-                }
-                Field::Purpose => {
-                    if let Some(v) = self.purpose.as_mut() {
-                        v.style = SelectStyle::Related1;
-                    }
-                }
-                Field::Iban => {
-                    if let Some(v) = self.iban.as_mut() {
-                        v.style = SelectStyle::Related1;
-                    }
-                }
-            }
-        }
-    }
-    fn clear_highlight(&mut self) {
-        self.set_style_to_every_field(Default::default());
-    }
 }
 
 /// All the information that we need to paint the minimap. Needs to be persisted as we draw the
@@ -716,7 +665,7 @@ impl App {
         #[cfg(debug_assertions)]
         cc.egui_ctx.set_debug_on_hover(true);
 
-        let rules: Vec<Rule> = cc
+        let _rules: Vec<Rule> = cc
             .storage
             .expect("Storage unavailable")
             .get_string("rules")
@@ -1638,12 +1587,6 @@ impl App {
             if r.should_close() {
                 self.demo_modal_open = false;
             }
-        }
-    }
-    // Inverse of eframe::App::save
-    fn restore(&mut self, storage: &mut dyn eframe::Storage) {
-        if let Some(rules_str) = storage.get_string("rules") {
-            self.rules = serde_json::from_str(&rules_str).expect("Couldn't deserialise rules");
         }
     }
 }
