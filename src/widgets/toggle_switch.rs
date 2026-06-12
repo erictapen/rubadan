@@ -1,8 +1,4 @@
-#[cfg(feature = "egui_parley")]
-use egui_parley as egui;
-
-#[cfg(feature = "egui_latest")]
-use egui_latest as egui;
+use egui;
 
 // Source code example of how to create your own widget.
 // This is meant to be read as a tutorial, hence the plethora of comments.

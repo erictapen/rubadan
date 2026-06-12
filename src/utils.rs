@@ -1,17 +1,3 @@
-#[cfg(feature = "egui_parley")]
-use egui_parley as egui;
-#[cfg(feature = "egui_parley")]
-use emath_parley as emath;
-#[cfg(feature = "egui_parley")]
-use epaint_parley as epaint;
-
-#[cfg(feature = "egui_latest")]
-use egui_latest as egui;
-#[cfg(feature = "egui_latest")]
-use emath_latest as emath;
-#[cfg(feature = "egui_latest")]
-use epaint_latest as epaint;
-
 use egui::Ui;
 use emath::Pos2;
 

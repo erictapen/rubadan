@@ -1,30 +1,5 @@
-#[cfg(feature = "egui_parley")]
-use eframe_parley as eframe;
-#[cfg(feature = "egui_parley")]
-use egui_extras_parley as egui_extras;
-#[cfg(feature = "egui_parley")]
-use egui_parley as egui;
-#[cfg(feature = "egui_parley")]
-use emath_parley as emath;
-#[cfg(feature = "egui_parley")]
-use epaint_parley as epaint;
-
-#[cfg(feature = "egui_latest")]
-use eframe_latest as eframe;
-#[cfg(feature = "egui_latest")]
-use egui_extras_latest as egui_extras;
-#[cfg(feature = "egui_latest")]
-use egui_latest as egui;
-#[cfg(feature = "egui_latest")]
-use emath_latest as emath;
-#[cfg(feature = "egui_latest")]
-use epaint_latest as epaint;
-
 use crate::execute;
-#[cfg(feature = "egui_latest")]
 use egui::FontFamily;
-#[cfg(feature = "egui_parley")]
-use egui::text::style::FontFamily;
 
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -88,7 +63,7 @@ fn get_hovered_widget(ctx: &Context) -> Option<Hid> {
 fn load_fonts(ctx: &egui::Context) {
     use egui::{FontData, FontDefinitions};
 
-    let mut fonts = FontDefinitions::default();
+    let mut fonts = FontDefinitions::empty();
     fonts.font_data.insert(
         "IBM Plex Sans".to_owned(),
         FontData::from_static(include_bytes!("../assets/fonts/IBMPlexSans-Regular.otf")).into(),
@@ -117,56 +92,46 @@ fn load_fonts(ctx: &egui::Context) {
         .into(),
     );
 
-    #[cfg(feature = "egui_latest")]
-    {
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("IBM Plex Sans".into()))
-            .or_default()
-            .push("IBM Plex Sans".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("IBM Plex Sans Bold".into()))
-            .or_default()
-            .push("IBM Plex Sans Bold".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("IBM Plex Sans Bold Italic".into()))
-            .or_default()
-            .push("IBM Plex Sans Bold Italic".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("IBM Plex Sans ExtraLight".into()))
-            .or_default()
-            .push("IBM Plex Sans ExtraLight".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("Noto Sans Symbols2".into()))
-            .or_default()
-            .push("Noto Sans Symbols2".to_owned());
-    }
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("IBM Plex Sans".into()))
+        .or_default()
+        .push("IBM Plex Sans".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("IBM Plex Sans Italic".into()))
+        .or_default()
+        .push("IBM Plex Sans Italic".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("IBM Plex Sans Bold".into()))
+        .or_default()
+        .push("IBM Plex Sans Bold".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("IBM Plex Sans Bold Italic".into()))
+        .or_default()
+        .push("IBM Plex Sans Bold Italic".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("IBM Plex Sans ExtraLight".into()))
+        .or_default()
+        .push("IBM Plex Sans ExtraLight".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("Noto Sans Symbols2".into()))
+        .or_default()
+        .push("Noto Sans Symbols2".to_owned());
 
     // We don't register a default font so that non-explicit font use is noticed.
     ctx.set_fonts(fonts);
 }
 
 fn regular(text: &str) -> RichText {
-    #[cfg(feature = "egui_parley")]
-    let family = FontFamily::Named("IBM Plex Sans".into());
-    #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("IBM Plex Sans".into());
     RichText::new(text).family(family)
 }
 
-#[cfg(feature = "egui_parley")]
-fn regular_font_id(ui: &Ui) -> egui::text::style::FontId {
-    egui::text::style::FontId::simple(
-        egui::style::TextStyle::Body.resolve(ui.style()).size,
-        FontFamily::Named("IBM Plex Sans".into()),
-    )
-}
-
-#[cfg(feature = "egui_latest")]
 fn regular_font_id(ui: &Ui) -> egui::FontId {
     egui::FontId::new(
         egui::style::TextStyle::Body.resolve(ui.style()).size,
@@ -175,25 +140,16 @@ fn regular_font_id(ui: &Ui) -> egui::FontId {
 }
 
 fn bold(text: &str) -> RichText {
-    #[cfg(feature = "egui_parley")]
-    let family = FontFamily::Named("IBM Plex Sans Bold".into());
-    #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("IBM Plex Sans Bold".into());
     RichText::new(text).family(family)
 }
 
 fn italic(text: &str) -> RichText {
-    #[cfg(feature = "egui_parley")]
-    let family = FontFamily::Named("IBM Plex Sans Italic".into());
-    #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("IBM Plex Sans Italic".into());
     RichText::new(text).family(family)
 }
 
 fn symbol(text: &str) -> RichText {
-    #[cfg(feature = "egui_parley")]
-    let family = FontFamily::Named("Noto Sans Symbols2".into());
-    #[cfg(feature = "egui_latest")]
     let family = FontFamily::Name("Noto Sans Symbols2".into());
     RichText::new(text).family(family)
 }
@@ -665,7 +621,7 @@ impl App {
         #[cfg(debug_assertions)]
         cc.egui_ctx.set_debug_on_hover(true);
 
-        let _rules: Vec<Rule> = cc
+        let rules: Vec<Rule> = cc
             .storage
             .expect("Storage unavailable")
             .get_string("rules")
@@ -684,7 +640,10 @@ impl App {
             ..Default::default()
         };
         #[cfg(not(feature = "demo"))]
-        let mut result: App = Default::default();
+        let mut result: App = Self {
+            rules: rules,
+            ..Default::default()
+        };
         result.update_annotations();
         result
     }
@@ -716,7 +675,7 @@ impl App {
             });
         });
     }
-    fn file_load_panel(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+    fn file_load_panel(&mut self, ui: &mut Ui) {
         let widget_size = ui
             .scope_builder(UiBuilder::new().invisible(), |ui| self.file_load_widget(ui))
             .response
@@ -731,7 +690,7 @@ impl App {
             ),
             widget_size,
         );
-        let (hovering, dropped_file) = ctx.input(|i| {
+        let (hovering, dropped_file) = ui.ctx().input(|i| {
             (
                 !i.raw.hovered_files.is_empty(),
                 i.raw.dropped_files.first().cloned(),
@@ -760,15 +719,16 @@ impl App {
         ui.scope_builder(UiBuilder::new().max_rect(target_rect), |ui| {
             let animation_time = 1.0;
             let animate_factor =
-                ctx.animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
+                ui.ctx()
+                    .animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
             if animate_factor > 0.0 {
                 // Show animation
-                ctx.request_repaint();
+                ui.ctx().request_repaint();
             }
             let intensity = 0.05;
             let period = 10.0;
             let speed = 0.1;
-            let time = (ctx.input(|i| i.time) % std::f64::consts::TAU) as f32;
+            let time = (ui.ctx().input(|i| i.time) % std::f64::consts::TAU) as f32;
             let distortion = |pos: &mut Pos2| {
                 let center_to_pos = *pos - target_rect.center();
                 *pos + animate_factor
@@ -860,9 +820,9 @@ impl App {
         });
     }
     fn minimap_panel(&mut self, ui: &mut Ui, row_height: f32) {
-        egui::SidePanel::right("minimap")
+        egui::Panel::right("minimap")
             .resizable(false)
-            .exact_width(200.0)
+            .exact_size(200.0)
             .frame(Frame::NONE)
             .show_inside(ui, |ui| {
                 self.minimap(ui, row_height);
@@ -919,24 +879,24 @@ impl App {
             ui.add_space(ui.available_height());
         });
     }
-    fn data_panel(&mut self, ctx: &egui::Context) {
-        let data_panel_response = egui::TopBottomPanel::top("data_panel")
+    fn data_panel(&mut self, ui: &mut Ui) {
+        let data_panel_response = egui::Panel::top("data_panel")
             .resizable(true)
-            .min_height(TRANSACTIONS_HEIGHT_MIN)
-            .default_height(ctx.screen_rect().max.y / PHI)
+            .min_size(TRANSACTIONS_HEIGHT_MIN)
+            .default_size(ui.ctx().content_rect().max.y / PHI)
             .frame(
                 Frame::new()
-                    .fill(ctx.style().visuals.panel_fill)
+                    .fill(ui.ctx().global_style().visuals.panel_fill)
                     .inner_margin(Margin {
                         left: 5,
                         ..Default::default()
                     }),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
 
                 if self.data.lock().unwrap().is_empty() {
-                    self.file_load_panel(ctx, ui);
+                    self.file_load_panel(ui);
                 } else {
                     self.data_table(ui);
                 }
@@ -975,7 +935,7 @@ impl App {
             ui.painter().add(shape);
         }
 
-        if ctx.input(|i| i.screen_rect().width()) > 600.0 {
+        if ctx.input(|i| i.content_rect().width()) > 600.0 {
             self.minimap_panel(ui, row_height);
         }
         // Clear state so that we can write down elements again
@@ -984,9 +944,9 @@ impl App {
         let mut offset_annotations = 0.0;
         let mut offset_data = 0.0;
 
-        let sidepanel_response = egui::SidePanel::right("annotations_sidepanel")
+        let sidepanel_response = egui::Panel::right("annotations_sidepanel")
             .resizable(false)
-            .min_width(200.0)
+            .min_size(200.0)
             .frame(Frame::NONE.fill(ui.visuals().panel_fill).inner_margin(5.0))
             .show_inside(ui, |ui| {
                 self.annotations_table(ui, &mut offset_annotations, row_height);
@@ -1325,14 +1285,14 @@ impl App {
         result
     }
     fn export_panel(&mut self, ui: &mut Ui) {
-        egui::SidePanel::right("export")
+        egui::Panel::right("export")
             .resizable(false)
             .frame(
                 Frame::NONE
                     .fill(ui.visuals().panel_fill)
                     .outer_margin(Margin::same(5)),
             )
-            .exact_width(200.0)
+            .exact_size(200.0)
             .show_inside(ui, |ui| {
                 ui.label(regular("The name of this account"));
                 ui.add(TextEdit::singleline(&mut self.account_name).font(regular_font_id(ui)));
@@ -1378,7 +1338,7 @@ impl App {
                 }
             });
     }
-    fn rules_panel(&mut self, ctx: &egui::Context) {
+    fn rules_panel(&mut self, ui: &mut Ui) {
         // Keep track if there is any rule being edited
         let mut a_rule_is_being_edited = false;
 
@@ -1387,13 +1347,13 @@ impl App {
         let response = egui::CentralPanel::default()
             .frame(
                 Frame::new()
-                    .fill(ctx.style().visuals.panel_fill)
+                    .fill(ui.ctx().global_style().visuals.panel_fill)
                     .inner_margin(Margin {
                         left: 5,
                         ..Default::default()
                     }),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 self.export_panel(ui);
 
                 // Compensate for missing margins
@@ -1405,7 +1365,7 @@ impl App {
                     .show(ui, |ui| {
                         let dragging_pointer: Option<egui::Pos2> = ui
                             .input(|i| i.pointer.interact_pos())
-                            .filter(|_| egui::DragAndDrop::has_payload_of_type::<usize>(ctx));
+                            .filter(|_| egui::DragAndDrop::has_payload_of_type::<usize>(ui.ctx()));
                         let mut last_rule_center = None;
                         let rules_len = self.rules.len();
                         let mut drop_to = None;
@@ -1428,7 +1388,7 @@ impl App {
                                         response,
                                     } = rule.ui(ui, &mut hovered_condition, i);
                                     if rule_response.hovered() {
-                                        set_hovered_widget(ctx, rule.hid());
+                                        set_hovered_widget(ui, rule.hid());
                                     }
 
                                     // In case there is any rule being dragged we preview the drop position
@@ -1502,8 +1462,8 @@ impl App {
 
                         // In case a rule was dragdropped this frame
                         if let (true, Some(from), Some(to)) = (
-                            ctx.input(|i| i.pointer.any_released()),
-                            egui::DragAndDrop::payload::<usize>(ctx),
+                            ui.ctx().input(|i| i.pointer.any_released()),
+                            egui::DragAndDrop::payload::<usize>(ui.ctx()),
                             drop_to,
                         ) {
                             let rule = self.rules.remove(*from);
@@ -1527,17 +1487,17 @@ impl App {
             self.hints.push(Hint::Rules);
         }
     }
-    fn bottom_bar(&mut self, ctx: &egui::Context) {
+    fn bottom_bar(&mut self, ui: &mut Ui) {
         egui::Area::new("bottom_bar".into())
             .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
             .order(egui::Order::Foreground) // ensure it draws above other panels
-            .show(ctx, |ui| {
-                ui.set_width(ctx.screen_rect().width()); // span full width
+            .show(ui, |ui| {
+                ui.set_width(ui.ctx().content_rect().width()); // span full width
                 ui.set_height(BOTTOM_BAR_HEIGHT);
 
                 ui.horizontal(|ui| {
                     #[cfg(debug_assertions)]
-                    if let Some(hid) = get_hovered_widget(ctx) {
+                    if let Some(hid) = get_hovered_widget(ui.ctx()) {
                         ui.label(regular(&format!("Hovering {hid}")));
                     }
                     if let Some(hint) = self.hints.last() {
@@ -1615,7 +1575,9 @@ impl eframe::App for App {
         info!("Successfully saved state");
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx();
+
         self.hints.clear();
 
         // We allow setting a flag to request an update to annotations from e.g. a closure.
@@ -1653,18 +1615,18 @@ impl eframe::App for App {
         // We turn off text selection globally in case the user is dragging
         // something
         if egui::DragAndDrop::has_any_payload(ctx) {
-            ctx.style_mut(|style| {
+            ctx.global_style_mut(|style| {
                 style.interaction.selectable_labels = false;
             });
         } else {
-            ctx.style_mut(|style| {
+            ctx.global_style_mut(|style| {
                 style.interaction.selectable_labels = true;
             });
         }
 
-        self.data_panel(ctx);
-        self.rules_panel(ctx);
-        self.bottom_bar(ctx);
+        self.data_panel(ui);
+        self.rules_panel(ui);
+        self.bottom_bar(ui);
     }
 }
 
