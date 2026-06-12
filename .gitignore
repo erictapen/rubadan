@@ -1,3 +1,5 @@
 dist/
 *.json
 !crate-hashes.json
+# assets/ is only intended for development, as it contains fonts
+assets/
