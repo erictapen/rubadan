@@ -4,7 +4,7 @@
   trunk,
   rustc,
   makeBinaryWrapper,
-  wasm-bindgen-cli_0_2_108,
+  wasm-bindgen-cli_0_2_121,
   binaryen,
   brotli,
   ibm-plex,
@@ -45,7 +45,7 @@ in
       nativeBuildInputs = [
         trunk
         rustc.llvmPackages.lld
-        wasm-bindgen-cli_0_2_108
+        wasm-bindgen-cli_0_2_121
         binaryen
         brotli
       ];
