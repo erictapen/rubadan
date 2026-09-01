@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2018-2021 Emil Ernerfeldt <emil.ernerfeldt@gmail.com>
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// Modified from egui_demo_lib/src/demo/toggle_switch.rs
+
 use egui;
 
 // Source code example of how to create your own widget.

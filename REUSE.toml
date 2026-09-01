@@ -1,0 +1,16 @@
+version = 1
+
+[[annotations]]
+path = [
+  "flake.lock",
+  "Cargo.nix",
+  "Cargo.lock"
+]
+SPDX-FileCopyrightText = "2026 Kerstin Humm <kerstin@erictapen.name>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+# From https://github.com/wolph/mt940/blob/988398dc9431bbeba7a72760adfef1a11392c1d4/mt940_tests/betterplace/sepa_mt9401.sta
+path = "sample_data/mt940.sta"
+SPDX-FileCopyrightText = "2017 Rick van Hattem <wolph@wol.ph>"
+SPDX-License-Identifier = "BSD-3-Clause"

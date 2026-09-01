@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Kerstin Humm <kerstin@erictapen.name>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 {
   description = "Rule based data annotation";
 
@@ -44,6 +48,7 @@
         pre-commit-check = inputs.pre-commit-hooks.lib.${system}.run {
           src = ./.;
           hooks = {
+            reuse.enable = true;
             nixfmt.enable = true;
             deadnix.enable = true;
             rustfmt = {
