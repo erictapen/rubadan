@@ -472,7 +472,7 @@ impl Annotation {
                 ui.painter().hline(
                     rect.x_range(),
                     rect.center().y,
-                    egui::Stroke::new(2.0, Color32::BLACK),
+                    egui::Stroke::new(2.0_f32, Color32::BLACK),
                 );
             }
             if let Annotation {
@@ -645,7 +645,7 @@ impl App {
         };
         #[cfg(not(feature = "demo"))]
         let mut result: App = Self {
-            rules: rules,
+            rules,
             ..Default::default()
         };
         result.update_annotations();
@@ -744,9 +744,9 @@ impl App {
                 target_rect,
                 CornerRadius::same(50),
                 if hovering {
-                    egui::Stroke::new(4.0, Color32::DARK_GRAY)
+                    egui::Stroke::new(4.0_f32, Color32::DARK_GRAY)
                 } else {
-                    egui::Stroke::new(4.0, Color32::GRAY)
+                    egui::Stroke::new(4.0_f32, Color32::GRAY)
                 },
                 StrokeKind::Middle,
             );
@@ -1397,7 +1397,7 @@ impl App {
 
                                     // In case there is any rule being dragged we preview the drop position
                                     if let Some(pointer) = dragging_pointer {
-                                        let stroke = egui::Stroke::new(1.0, Color32::BLUE);
+                                        let stroke = egui::Stroke::new(1.0_f32, Color32::BLUE);
                                         let rect = response.rect;
                                         let current_center = rect.center().y;
                                         // First rule being drawn and the pointer is above it or it's inbetween
@@ -1904,7 +1904,7 @@ impl CompleteRule {
                                     ui.painter().hline(
                                         r.rect.x_range(),
                                         r.rect.center().y,
-                                        egui::Stroke::new(1.0, ui.style().visuals.text_color()),
+                                        egui::Stroke::new(1.0_f32, ui.style().visuals.text_color()),
                                     );
                                 });
                         }
@@ -1912,7 +1912,7 @@ impl CompleteRule {
                         ui.painter().hline(
                             rule_text.rect.x_range(),
                             rule_text.rect.center().y,
-                            egui::Stroke::new(1.0, Color32::LIGHT_GRAY),
+                            egui::Stroke::new(1.0_f32, Color32::LIGHT_GRAY),
                         );
                     }
                     r |= rule_text;
@@ -2444,9 +2444,12 @@ impl Edges {
         // Helper function to do the low level curve painting
         let curve = |painter: &mut Painter, from: Pos2, to: Pos2, state: ButtonState| {
             let (stroke, layer) = match state {
-                ButtonState::None => (egui::Stroke::new(2.0, Color32::LIGHT_GRAY), none_layer),
-                ButtonState::Hovered => (egui::Stroke::new(4.0, Color32::GRAY), hovered_layer),
-                ButtonState::Active => (egui::Stroke::new(4.0, Color32::LIGHT_BLUE), active_layer),
+                ButtonState::None => (egui::Stroke::new(2.0_f32, Color32::LIGHT_GRAY), none_layer),
+                ButtonState::Hovered => (egui::Stroke::new(4.0_f32, Color32::GRAY), hovered_layer),
+                ButtonState::Active => (
+                    egui::Stroke::new(4.0_f32, Color32::LIGHT_BLUE),
+                    active_layer,
+                ),
             };
 
             let x_dist = from.x - to.x;
