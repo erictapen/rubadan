@@ -9,3 +9,4 @@ result*
 .pre-commit-config.yaml
 # assets/ is only intended for development, as it contains fonts
 assets/
+todo
