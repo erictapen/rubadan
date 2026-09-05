@@ -13,10 +13,10 @@ demo = []
 
 
 [dependencies]
-egui = { package = "egui", version = "*" }
-epaint = { package = "epaint", version = "*", default-features = false }
-egui_extras = { package = "egui_extras", version = "*", default-features = false }
-emath = { package = "emath", version = "*", default-features = false }
+egui = { version = "*" }
+epaint = { version = "*", default-features = false }
+egui_extras = { version = "*", default-features = false }
+emath = { version = "*", default-features = false }
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 log = "*"
@@ -33,14 +33,14 @@ nom = "*"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "*"
-eframe = { package = "eframe", version = "*", default-features = false, features = [ "persistence", "wayland", "glow", "x11" ] }
+eframe = { version = "*", default-features = false, features = [ "persistence", "wayland", "glow", "x11" ] }
 futures = "*"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "=0.2.121" }
+wasm-bindgen = { version = "=0.2.126" }
 wasm-bindgen-futures = { version = "*", default-features = false }
 web-sys = { version = "*", default-features = false }
-eframe = { package = "eframe", version = "*", default-features = false, features = [ "persistence", "glow" ] }
+eframe = { version = "*", default-features = false, features = [ "persistence", "glow" ] }
 
 [profile.release]
 opt-level = 2

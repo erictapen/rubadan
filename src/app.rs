@@ -723,23 +723,34 @@ impl App {
         });
 
         if let Some(dropped_file) = dropped_file {
-            let mut file_content = Vec::new();
-
             #[cfg(target_arch = "wasm32")]
-            if let Some(bytes) = dropped_file.bytes {
-                file_content = bytes.to_vec();
+            {
+                let data_clone = Arc::clone(&self.data);
+                let ctx_clone = ui.ctx().clone();
+                execute(async move {
+                    let file_content = (*dropped_file)
+                        .bytes_async()
+                        .await
+                        .expect("Couldn't read dropped file.");
+                    let parsed = parse_mt940_file(&file_content);
+                    let mut data = data_clone.lock().unwrap();
+                    *data = parsed;
+                    App::request_update_annotations(&ctx_clone);
+                    // Redraw so the user can see the result of file load even when window
+                    // isn't active.
+                    ctx_clone.request_repaint();
+                });
             }
 
             #[cfg(not(target_arch = "wasm32"))]
-            if let Some(path) = dropped_file.path {
-                file_content =
+            {
+                let path = dropped_file.path();
+                let file_content =
                     std::fs::read(&path).expect(&format!("Couldn't read {}", path.display()));
+                let parsed = parse_mt940_file(&file_content);
+                let mut data = self.data.lock().unwrap();
+                *data = parsed;
             }
-
-            let parsed = parse_mt940_file(&file_content);
-
-            let mut data = self.data.lock().unwrap();
-            *data = parsed;
         }
 
         self.file_load_widget(ui, hovering);
@@ -816,7 +827,7 @@ impl App {
             .resizable(false)
             .exact_size(200.0)
             .frame(Frame::NONE)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.minimap(ui, row_height);
             });
     }
@@ -884,7 +895,7 @@ impl App {
                         ..Default::default()
                     }),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
 
                 // So the panel is actually resizable
@@ -943,7 +954,7 @@ impl App {
             .resizable(false)
             .min_size(200.0)
             .frame(Frame::NONE.fill(ui.visuals().panel_fill).inner_margin(5.0))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.annotations_table(ui, &mut offset_annotations, row_height);
             });
 
@@ -1288,7 +1299,7 @@ impl App {
                     .outer_margin(Margin::same(5)),
             )
             .exact_size(200.0)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.label(regular("The name of this account"));
                 ui.add(TextEdit::singleline(&mut self.account_name).font(regular_font_id(ui)));
 
@@ -1348,7 +1359,7 @@ impl App {
                         ..Default::default()
                     }),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.export_panel(ui);
 
                 // Compensate for missing margins
