@@ -158,23 +158,25 @@ fn symbol(text: &str) -> RichText {
     RichText::new(text).family(family)
 }
 
-fn parse_mt940_file(bytes: &[u8]) -> Vec<DataRow> {
-    let file_str = &String::from_utf8(bytes.to_vec()).unwrap();
+fn parse_mt940_file(bytes: &[u8]) -> Result<Vec<DataRow>, &str> {
+    let mut file_str =
+        String::from_utf8(bytes.to_vec()).map_err(|_| "File doesn't contain valid UTF-8.")?;
     if file_str.contains(":61:220229") {
         warn!("Warning! Had to replace an occurence of an impossible date.",);
+        file_str = file_str.replace(":61:220229", ":61:220301");
     }
 
     let result: Vec<DataRow> = mt940::parse_mt940(&mt940::sanitizers::sanitize(
-        &file_str.replace(":61:220229", ":61:220301"),
+        &file_str,
     ))
-    .unwrap_or_else(|e| panic!("{}", e))
+    .map_err(|_| "The file you are trying to load is not a valid MT940 file. Currently this is the only file type supported.")?
     .into_iter()
     .flat_map(DataRow::from_message)
     .collect();
 
     info!("Parsed {} MT940 rows", result.len());
 
-    result
+    Ok(result)
 }
 
 struct Money {
@@ -585,6 +587,7 @@ pub struct App {
     data: Arc<Mutex<Vec<DataRow>>>,
     /// Sync the scroll position so that the data and annotation table appear as one
     data_vertical_scroll_offset: f32,
+    import_error: Arc<Mutex<Option<String>>>,
     rules: Vec<Rule>,
     account_name: String,
     unmatched_rows: u64,
@@ -600,6 +603,7 @@ impl Default for App {
         Self {
             data: Default::default(),
             data_vertical_scroll_offset: 0.0,
+            import_error: Default::default(),
             rules: vec![],
             // This default makes sense for hledger
             account_name: "assets".to_string(),
@@ -635,11 +639,14 @@ impl App {
         // For quicker development speed we load a file as default
         #[cfg(feature = "demo")]
         let mut result = Self {
-            data: Arc::new(Mutex::new(parse_mt940_file(
-                // This example file is from
-                // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
-                include_bytes!("../sample_data/mt940.sta"),
-            ))),
+            data: Arc::new(Mutex::new(
+                parse_mt940_file(
+                    // This example file is from
+                    // https://github.com/svenstaro/mt940-rs/blob/29b547fb062de34cd8f39e9adff9d80dfa64dbdd/tests/data/mt940/full/betterplace/sepa_mt9401.sta
+                    include_bytes!("../sample_data/mt940.sta"),
+                )
+                .unwrap(),
+            )),
             rules,
             ..Default::default()
         };
@@ -664,7 +671,7 @@ impl App {
         let period = 10.0;
         let speed = 0.1;
         let time = (ui.ctx().input(|i| i.time) % std::f64::consts::TAU) as f32;
-        let target_rect = ui.max_rect().clone();
+        let target_rect = ui.max_rect();
         let distortion = |pos: &mut Pos2| {
             let center_to_pos = *pos - target_rect.center();
             *pos + animate_factor
@@ -695,14 +702,23 @@ impl App {
                     if button_response.clicked() {
                         let task = rfd::AsyncFileDialog::new().pick_file();
                         let data_clone = Arc::clone(&self.data);
+                        let error_clone = Arc::clone(&self.import_error);
                         let ctx_clone = ui.ctx().clone();
                         execute(async move {
                             if let Some(file) = task.await {
                                 let file_content = file.read().await;
-                                let parsed = parse_mt940_file(&file_content);
 
-                                let mut data = data_clone.lock().unwrap();
-                                *data = parsed;
+                                match parse_mt940_file(&file_content) {
+                                    Ok(parsed) => {
+                                        let mut data = data_clone.lock().unwrap();
+                                        *data = parsed;
+                                    }
+                                    Err(e) => {
+                                        let mut error = error_clone.lock().unwrap();
+                                        *error = Some(e.to_string());
+                                    }
+                                }
+
                                 App::request_update_annotations(&ctx_clone);
                                 // Redraw so the user can see the result of file load even when window
                                 // isn't active.
@@ -726,15 +742,25 @@ impl App {
             #[cfg(target_arch = "wasm32")]
             {
                 let data_clone = Arc::clone(&self.data);
+                let error_clone = Arc::clone(&self.import_error);
                 let ctx_clone = ui.ctx().clone();
                 execute(async move {
                     let file_content = (*dropped_file)
                         .bytes_async()
                         .await
                         .expect("Couldn't read dropped file.");
-                    let parsed = parse_mt940_file(&file_content);
-                    let mut data = data_clone.lock().unwrap();
-                    *data = parsed;
+
+                    match parse_mt940_file(&file_content) {
+                        Ok(parse) => {
+                            let mut data = data_clone.lock().unwrap();
+                            *data = parsed;
+                        }
+                        Err(e) => {
+                            let mut error = error_clone.lock().unwrap();
+                            *error = e;
+                        }
+                    }
+
                     App::request_update_annotations(&ctx_clone);
                     // Redraw so the user can see the result of file load even when window
                     // isn't active.
@@ -745,11 +771,19 @@ impl App {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let path = dropped_file.path();
-                let file_content =
-                    std::fs::read(&path).expect(&format!("Couldn't read {}", path.display()));
-                let parsed = parse_mt940_file(&file_content);
-                let mut data = self.data.lock().unwrap();
-                *data = parsed;
+                let file_content = std::fs::read(path)
+                    .unwrap_or_else(|_| panic!("Couldn't read {}", path.display()));
+
+                match parse_mt940_file(&file_content) {
+                    Ok(parsed) => {
+                        let mut data = self.data.lock().unwrap();
+                        *data = parsed;
+                    }
+                    Err(e) => {
+                        let mut error = self.import_error.lock().unwrap();
+                        *error = Some(e.to_string());
+                    }
+                }
             }
         }
 
@@ -905,6 +939,33 @@ impl App {
                     self.file_load_panel(ui);
                 } else {
                     self.data_table(ui);
+                }
+
+                // Notification Modal in case a file import failed
+                {
+                    let mut dismissed = false;
+                    if let Some(error_text) = &*self.import_error.lock().unwrap() {
+                        egui::containers::modal::Modal::new("file_import_modal".into()).show(
+                            ui.ctx(),
+                            |ui| {
+                                ui.label(regular(&format!(
+                                    "The file couldn't be imported: {error_text}"
+                                )));
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::TOP),
+                                    |ui| {
+                                        if ui.button(regular("Close")).clicked() {
+                                            dismissed = true;
+                                        }
+                                    },
+                                )
+                            },
+                        );
+                    }
+                    if dismissed {
+                        *self.import_error.lock().unwrap() = None;
+                    }
                 }
             });
         if data_panel_response.response.hovered() {
