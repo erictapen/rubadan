@@ -1421,7 +1421,9 @@ impl App {
                     }),
             )
             .show(ui, |ui| {
-                self.export_panel(ui);
+                if !self.data.lock().unwrap().is_empty() {
+                    self.export_panel(ui);
+                }
 
                 // Compensate for missing margins
                 ui.add_space(10.0);
