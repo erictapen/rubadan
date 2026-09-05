@@ -651,49 +651,70 @@ impl App {
         result.update_annotations();
         result
     }
-    fn file_load_widget(&mut self, ui: &mut Ui) {
-        Frame::NONE.inner_margin(Margin::same(120)).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.style_mut().spacing.item_spacing.x = 0.0;
-                ui.label(bold("Rubadan"));
-                ui.label(regular(&format!(" processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or{THIN_SPACE}")));
-                let button_response = ui.button(bold("pick one."));
-                if button_response.clicked() {
-                    let task = rfd::AsyncFileDialog::new().pick_file();
-                    let data_clone = Arc::clone(&self.data);
-                    let ctx_clone = ui.ctx().clone();
-                    execute(async move {
-                        if let Some(file) = task.await {
-                            let file_content = file.read().await;
-                            let parsed = parse_mt940_file(&file_content);
+    fn file_load_widget(&mut self, ui: &mut Ui, hovering: bool) {
+        let animation_time = 1.0;
+        let animate_factor =
+            ui.ctx()
+                .animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
+        if animate_factor > 0.0 {
+            // Show animation
+            ui.ctx().request_repaint();
+        }
+        let intensity = 0.05;
+        let period = 10.0;
+        let speed = 0.1;
+        let time = (ui.ctx().input(|i| i.time) % std::f64::consts::TAU) as f32;
+        let target_rect = ui.max_rect().clone();
+        let distortion = |pos: &mut Pos2| {
+            let center_to_pos = *pos - target_rect.center();
+            *pos + animate_factor
+                * intensity
+                * (((center_to_pos.angle() + (speed * time)) * period).sin())
+                * center_to_pos
+        };
+        let rect = ui.max_rect().shrink(80.0);
+        let rect_shape = RectShape::stroke(
+            rect,
+            CornerRadius::same(50),
+            if hovering {
+                egui::Stroke::new(4.0_f32, Color32::DARK_GRAY)
+            } else {
+                egui::Stroke::new(4.0_f32, Color32::GRAY)
+            },
+            StrokeKind::Middle,
+        );
+        crate::utils::paint_dashed_rect_shape(ui, rect_shape, 10.0, 10.0, distortion);
 
-                            let mut data = data_clone.lock().unwrap();
-                            *data = parsed;
-                            App::request_update_annotations(&ctx_clone);
-                            // Redraw so the user can see the result of file load even when window
-                            // isn't active.
-                            ctx_clone.request_repaint();
-                        }
-                    });
-                }
+        ui.scope_builder(UiBuilder::new().max_rect(rect.shrink2(Vec2::new(50.0, 0.0))), |ui| {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.style_mut().spacing.item_spacing.x = 0.0;
+                    ui.label(bold("Rubadan"));
+                    ui.label(regular(&format!(" processes bookkeeping transactions from your bank account.\nDrag a MT940 file here or{THIN_SPACE}")));
+                    let button_response = ui.button(bold("pick one."));
+                    if button_response.clicked() {
+                        let task = rfd::AsyncFileDialog::new().pick_file();
+                        let data_clone = Arc::clone(&self.data);
+                        let ctx_clone = ui.ctx().clone();
+                        execute(async move {
+                            if let Some(file) = task.await {
+                                let file_content = file.read().await;
+                                let parsed = parse_mt940_file(&file_content);
+
+                                let mut data = data_clone.lock().unwrap();
+                                *data = parsed;
+                                App::request_update_annotations(&ctx_clone);
+                                // Redraw so the user can see the result of file load even when window
+                                // isn't active.
+                                ctx_clone.request_repaint();
+                            }
+                        });
+                    }
+                });
             });
         });
     }
     fn file_load_panel(&mut self, ui: &mut Ui) {
-        let widget_size = ui
-            .scope_builder(UiBuilder::new().invisible(), |ui| self.file_load_widget(ui))
-            .response
-            .rect
-            .size();
-        let available_size = ui.max_rect().size();
-        // Where we'll paint the widget at
-        let target_rect = Rect::from_min_size(
-            Pos2::new(
-                available_size.x / 2.0 - widget_size.x / 2.0,
-                available_size.y / 2.0 - widget_size.y / 2.0,
-            ),
-            widget_size,
-        );
         let (hovering, dropped_file) = ui.ctx().input(|i| {
             (
                 !i.raw.hovered_files.is_empty(),
@@ -711,7 +732,8 @@ impl App {
 
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(path) = dropped_file.path {
-                file_content = std::fs::read(&path).expect("Couldn't read file");
+                file_content =
+                    std::fs::read(&path).expect(&format!("Couldn't read {}", path.display()));
             }
 
             let parsed = parse_mt940_file(&file_content);
@@ -720,41 +742,7 @@ impl App {
             *data = parsed;
         }
 
-        ui.scope_builder(UiBuilder::new().max_rect(target_rect), |ui| {
-            let animation_time = 1.0;
-            let animate_factor =
-                ui.ctx()
-                    .animate_bool_with_time("file_load_wave".into(), hovering, animation_time);
-            if animate_factor > 0.0 {
-                // Show animation
-                ui.ctx().request_repaint();
-            }
-            let intensity = 0.05;
-            let period = 10.0;
-            let speed = 0.1;
-            let time = (ui.ctx().input(|i| i.time) % std::f64::consts::TAU) as f32;
-            let distortion = |pos: &mut Pos2| {
-                let center_to_pos = *pos - target_rect.center();
-                *pos + animate_factor
-                    * intensity
-                    * (((center_to_pos.angle() + (speed * time)) * period).sin())
-                    * center_to_pos
-            };
-            let rect_shape = RectShape::stroke(
-                target_rect,
-                CornerRadius::same(50),
-                if hovering {
-                    egui::Stroke::new(4.0_f32, Color32::DARK_GRAY)
-                } else {
-                    egui::Stroke::new(4.0_f32, Color32::GRAY)
-                },
-                StrokeKind::Middle,
-            );
-            crate::utils::paint_dashed_rect_shape(ui, rect_shape, 10.0, 10.0, distortion);
-
-            // Paint the inside
-            self.file_load_widget(ui);
-        });
+        self.file_load_widget(ui, hovering);
     }
     /// Annotate data rows and update highlight relationships
     /// The idea is to not run this every frame, but only when rules, overrides or data change
@@ -898,6 +886,9 @@ impl App {
             )
             .show_inside(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+
+                // So the panel is actually resizable
+                ui.take_available_space();
 
                 if self.data.lock().unwrap().is_empty() {
                     self.file_load_panel(ui);
