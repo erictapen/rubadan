@@ -751,13 +751,13 @@ impl App {
                         .expect("Couldn't read dropped file.");
 
                     match parse_mt940_file(&file_content) {
-                        Ok(parse) => {
+                        Ok(parsed) => {
                             let mut data = data_clone.lock().unwrap();
                             *data = parsed;
                         }
                         Err(e) => {
                             let mut error = error_clone.lock().unwrap();
-                            *error = e;
+                            *error = Some(e.to_string());
                         }
                     }
 
@@ -1381,7 +1381,7 @@ impl App {
 
                 ui.add_enabled(
                     exportable,
-                    Button::new(regular("Export to file").color(Color32::WHITE))
+                    Button::new(regular("Export to hledger file").color(Color32::WHITE))
                         .fill(Color32::DARK_GREEN),
                 );
                 let clipboard_button_response = ui.add_enabled(
