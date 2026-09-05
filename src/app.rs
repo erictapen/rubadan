@@ -1357,7 +1357,7 @@ impl App {
             .frame(
                 Frame::NONE
                     .fill(ui.visuals().panel_fill)
-                    .outer_margin(Margin::same(5)),
+                    .inner_margin(Margin::same(5)),
             )
             .exact_size(200.0)
             .show(ui, |ui| {
