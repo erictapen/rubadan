@@ -21,16 +21,18 @@ The easiest way to use Rubadan [is in the browser](https://erictapen.name/rubada
 
 For running it locally you will need to compile it yourself currently:
 
-### Using cargo
-
-```
-cargo install rubadan
-```
-
 ### Using Nix with Flakes enabled
 
 ```
 nix run github:erictapen/rubadan
+```
+
+### Using cargo
+
+You will need some non-crate dependencies installed like `wayland`/`libx11`.
+
+```
+cargo install rubadan
 ```
 
 

@@ -73,7 +73,6 @@
                 cargo
                 rustc
                 trunk
-                pkg-config
                 clippy
                 rustc.llvmPackages.lld
                 wasm-bindgen-cli
@@ -84,9 +83,6 @@
                 libxcb
                 libxkbcommon
                 wayland
-                dbus
-                postgresql
-                pre-commit
               ]);
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
           };
