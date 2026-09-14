@@ -12,10 +12,14 @@ authors = [ "Kerstin Humm <kerstin@erictapen.name>" ]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/erictapen/rubadan"
 
+[[bin]]
+name = "rubadan"
+path = "src/main.rs"
+doc = false
+
 [features]
 default = []
 demo = []
-
 
 [dependencies]
 egui = { version = "0.36", default-features = false }
