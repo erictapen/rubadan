@@ -8,6 +8,7 @@ edition = "2024"
 name = "rubadan"
 version = "0.1.0"
 description = "A GUI import tool for hledger (a plain text accounting tool), usable on the web and on desktop."
+authors = [ "Kerstin Humm <kerstin@erictapen.name>" ]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/erictapen/rubadan"
 
