@@ -3,9 +3,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 [package]
+edition = "2024"
+
 name = "rubadan"
 version = "0.1.0"
-edition = "2024"
+description = "A GUI import tool for hledger (a plain text accounting tool), usable on the web and on desktop."
+license = "GPL-3.0-or-later"
+repository = "https://github.com/erictapen/rubadan"
 
 [features]
 default = []
