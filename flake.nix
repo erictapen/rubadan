@@ -75,7 +75,7 @@
                 trunk
                 clippy
                 rustc.llvmPackages.lld
-                wasm-bindgen-cli
+                self.packages.${system}.web.wasm-bindgen-cli
                 libglvnd
                 libx11
                 libxcursor

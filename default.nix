@@ -22,6 +22,7 @@
   wayland,
 }:
 let
+  wasm-bindgen-cli = wasm-bindgen-cli_0_2_126;
   common = {
     pname = "rubadan";
     version = "0.1.0";
@@ -36,6 +37,8 @@ let
       cp ${noto-fonts}/share/fonts/noto/NotoSansSymbols2-Regular.otf assets/fonts/
     '';
 
+    passthru = { inherit wasm-bindgen-cli; };
+
     meta.mainProgram = "rubadan";
   };
 in
@@ -49,7 +52,7 @@ in
       nativeBuildInputs = [
         trunk
         rustc.llvmPackages.lld
-        wasm-bindgen-cli_0_2_126
+        wasm-bindgen-cli
         binaryen
         brotli
       ];
