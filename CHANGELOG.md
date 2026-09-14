@@ -4,6 +4,16 @@ SPDX-FileCopyrightText: 2026 Kerstin Humm <kerstin@erictapen.name>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
+<!--
+How to release:
+
+$ git tag v0.1.0
+$ git push origin --tags
+$ gh release create
+$ cargo publish
+bump version number
+-->
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -20,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
-## [0.1.0] - unreleased
+## [0.1.1] - unreleased
+
+
+## [0.1.0] - 2026-09-14
 
 Initial release
