@@ -14,3 +14,15 @@ SPDX-License-Identifier = "GPL-3.0-or-later"
 path = "sample_data/mt940.sta"
 SPDX-FileCopyrightText = "2017 Rick van Hattem <wolph@wol.ph>"
 SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = "assets/fonts/IBMPlex*"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright © 2017 IBM Corp. with Reserved Font Name \"Plex\""
+SPDX-License-Identifier = "OFL-1.1-RFN"
+
+[[annotations]]
+path = "assets/fonts/NotoSans*"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)"
+SPDX-License-Identifier = "OFL-1.1-RFN"
