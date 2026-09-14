@@ -921,6 +921,7 @@ impl App {
             .resizable(true)
             .min_size(TRANSACTIONS_HEIGHT_MIN)
             .default_size(ui.ctx().content_rect().max.y / PHI)
+            .max_size(ui.ctx().content_rect().max.y - 50.0)
             .frame(
                 Frame::new()
                     .fill(ui.ctx().global_style().visuals.panel_fill)
